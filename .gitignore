@@ -1,0 +1,13 @@
+node_modules/
+dist/
+release/
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+npm-debug.log*
+.DS_Store
+Thumbs.db
