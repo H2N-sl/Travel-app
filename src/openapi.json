@@ -1,0 +1,379 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Serendib DMC Operations REST API",
+    "description": "REST API specification for Serendib Destination Management Company (DMC) Tour Operations system, intended for Laravel 12 backend implementation.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Serendib DMC Engineering",
+      "email": "dev@serendibdmc.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8000/api",
+      "description": "Local Laravel API Server"
+    },
+    {
+      "url": "/api",
+      "description": "Current Origin / Mock Dev Server"
+    }
+  ],
+  "paths": {
+    "/agents": {
+      "get": {
+        "summary": "List all overseas travel agents",
+        "operationId": "getAgents",
+        "tags": ["Agents"],
+        "responses": {
+          "200": {
+            "description": "List of registered agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Agent" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Register a new overseas travel agent",
+        "operationId": "createAgent",
+        "tags": ["Agents"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NewAgent" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent registered successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Agent" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/bookings": {
+      "get": {
+        "summary": "List all reservations with agent and itinerary relations",
+        "operationId": "getBookings",
+        "tags": ["Bookings"],
+        "responses": {
+          "200": {
+            "description": "List of bookings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Booking" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new tour booking and generate booking reference",
+        "operationId": "createBooking",
+        "tags": ["Bookings"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NewBooking" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Booking created with generated reference",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Booking" }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error"
+          }
+        }
+      }
+    },
+    "/bookings/{id}/itinerary": {
+      "put": {
+        "summary": "Update full itinerary day schedule for a booking",
+        "operationId": "updateBookingItinerary",
+        "tags": ["Bookings"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "days": {
+                    "type": "array",
+                    "items": { "$ref": "#/components/schemas/ItineraryDay" }
+                  }
+                },
+                "required": ["days"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Itinerary updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Booking" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inquiries": {
+      "get": {
+        "summary": "List client inquiries from website journey planner",
+        "operationId": "getInquiries",
+        "tags": ["Inquiries"],
+        "responses": {
+          "200": {
+            "description": "List of inquiries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Inquiry" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Submit a new customer trip inquiry",
+        "operationId": "createInquiry",
+        "tags": ["Inquiries"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NewInquiry" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Inquiry submitted",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Inquiry" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inquiries/{id}/status": {
+      "patch": {
+        "summary": "Update the workflow status of an inquiry",
+        "operationId": "updateInquiryStatus",
+        "tags": ["Inquiries"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["New", "Contacted", "Closed"]
+                  }
+                },
+                "required": ["status"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Inquiry status updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Inquiry" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Agent": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "code": { "type": "string", "example": "ABC" },
+          "name": { "type": "string", "example": "ABC Travel UK Ltd" },
+          "country": { "type": "string", "example": "United Kingdom" },
+          "contact_person": { "type": "string", "example": "Sarah Jenkins" },
+          "email": { "type": "string", "format": "email", "example": "sarah@abctravel.co.uk" },
+          "phone": { "type": "string", "example": "+44 20 7946 0912" },
+          "current_seq": { "type": "integer", "example": 1 },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "NewAgent": {
+        "type": "object",
+        "required": ["code", "name", "country", "contact_person", "email", "phone"],
+        "properties": {
+          "code": { "type": "string", "example": "LON" },
+          "name": { "type": "string", "example": "London Bespoke Escapes" },
+          "country": { "type": "string", "example": "United Kingdom" },
+          "contact_person": { "type": "string", "example": "Edward Hall" },
+          "email": { "type": "string", "format": "email", "example": "edward@bespoke-escapes.co.uk" },
+          "phone": { "type": "string", "example": "+44 7700 900123" }
+        }
+      },
+      "Booking": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "booking_number": { "type": "string", "example": "ABC-2026-0001" },
+          "agent_id": { "type": "integer", "example": 1 },
+          "guest_name": { "type": "string", "example": "Mr. David Smith & Family" },
+          "nationality": { "type": "string", "example": "British" },
+          "pax_adults": { "type": "integer", "example": 2 },
+          "pax_children": { "type": "integer", "example": 1 },
+          "arrival_date": { "type": "string", "format": "date", "example": "2026-10-10" },
+          "departure_date": { "type": "string", "format": "date", "example": "2026-10-17" },
+          "arrival_flight": { "type": "string", "example": "UL504 @ 12:40 PM" },
+          "departure_flight": { "type": "string", "example": "UL503 @ 02:15 PM" },
+          "transport_type": { "type": "string", "example": "Luxury AC Van (Toyota KDH)" },
+          "driver_guide": { "type": "string", "example": "Samantha Bandara (National Guide)" },
+          "status": { "type": "string", "example": "In Operation" },
+          "special_requests": { "type": "string", "nullable": true, "example": "Honeymoon setup, vegetarian meals" },
+          "revenue_lkr": { "type": "number", "example": 2850000 },
+          "expenses_hotels": { "type": "number", "example": 1250000 },
+          "expenses_transport": { "type": "number", "example": 420000 },
+          "expenses_guide": { "type": "number", "example": 140000 },
+          "expenses_activities": { "type": "number", "example": 210000 },
+          "expenses_other": { "type": "number", "example": 65000 },
+          "agent": { "$ref": "#/components/schemas/Agent" },
+          "itinerary_days": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ItineraryDay" }
+          }
+        }
+      },
+      "NewBooking": {
+        "type": "object",
+        "required": [
+          "agent_id",
+          "guest_name",
+          "nationality",
+          "pax_adults",
+          "arrival_date",
+          "departure_date",
+          "transport_type",
+          "revenue_lkr"
+        ],
+        "properties": {
+          "agent_id": { "type": "integer", "example": 1 },
+          "guest_name": { "type": "string", "example": "Lord & Lady Crawford" },
+          "nationality": { "type": "string", "example": "British" },
+          "pax_adults": { "type": "integer", "default": 2, "example": 2 },
+          "pax_children": { "type": "integer", "default": 0, "example": 0 },
+          "arrival_date": { "type": "string", "format": "date", "example": "2026-11-01" },
+          "departure_date": { "type": "string", "format": "date", "example": "2026-11-10" },
+          "arrival_flight": { "type": "string", "example": "EK650 @ 08:30 AM" },
+          "departure_flight": { "type": "string", "example": "EK651 @ 09:45 PM" },
+          "transport_type": { "type": "string", "example": "Luxury AC Van (Toyota KDH)" },
+          "driver_guide": { "type": "string", "example": "Sunil Perera (Senior Guide)" },
+          "revenue_lkr": { "type": "number", "example": 3200000 },
+          "special_requests": { "type": "string", "nullable": true, "example": "Quiet hotel rooms with tea plantation views" }
+        }
+      },
+      "ItineraryDay": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "booking_id": { "type": "integer", "example": 1 },
+          "day_number": { "type": "integer", "example": 1 },
+          "date": { "type": "string", "format": "date", "example": "2026-10-10" },
+          "destination": { "type": "string", "example": "Colombo" },
+          "hotel_name": { "type": "string", "example": "Cinnamon Grand Colombo" },
+          "meals": { "type": "string", "example": "Dinner" },
+          "activities": { "type": "string", "example": "Airport greeting, Colombo City Tour" },
+          "transport": { "type": "string", "example": "Private Van" }
+        }
+      },
+      "Inquiry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer", "example": 1 },
+          "full_name": { "type": "string", "example": "Eleanor Vance" },
+          "email": { "type": "string", "format": "email", "example": "eleanor.vance@example.co.uk" },
+          "nationality": { "type": "string", "example": "British" },
+          "arrival_date": { "type": "string", "format": "date", "example": "2026-11-15" },
+          "departure_date": { "type": "string", "format": "date", "example": "2026-11-25" },
+          "travelers": { "type": "integer", "example": 2 },
+          "package_interest": { "type": "string", "example": "grand-10" },
+          "interests": { "type": "string", "example": "Culture, scenic train journey, wildlife safari" },
+          "message": { "type": "string", "example": "Customized 10-day itinerary with private guide." },
+          "status": { "type": "string", "enum": ["New", "Contacted", "Closed"], "example": "New" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "NewInquiry": {
+        "type": "object",
+        "required": ["full_name", "email", "nationality", "arrival_date", "departure_date", "travelers", "message"],
+        "properties": {
+          "full_name": { "type": "string", "example": "Eleanor Vance" },
+          "email": { "type": "string", "format": "email", "example": "eleanor.vance@example.co.uk" },
+          "nationality": { "type": "string", "example": "British" },
+          "arrival_date": { "type": "string", "format": "date", "example": "2026-11-15" },
+          "departure_date": { "type": "string", "format": "date", "example": "2026-11-25" },
+          "travelers": { "type": "integer", "example": 2 },
+          "package_interest": { "type": "string", "example": "grand-10" },
+          "interests": { "type": "string", "example": "Culture, wildlife safari" },
+          "message": { "type": "string", "example": "Looking for private transport and luxury stays." }
+        }
+      }
+    }
+  }
+}

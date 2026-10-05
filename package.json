@@ -3,48 +3,23 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "main": "electron/main.cjs",
-  "engines": {
-    "node": ">=22.12.0"
-  },
   "scripts": {
-    "dev": "npm run rebuild:native && concurrently -k \"vite --host 127.0.0.1 --strictPort\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "dev:web": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview",
-    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
-    "dist": "npm run rebuild:native && npm run build && electron-builder"
+    "dev": "vite --host 0.0.0.0 --port 3000",
+    "build": "vite build",
+    "lint": "tsc --noEmit",
+    "preview": "vite preview --host 0.0.0.0 --port 3000"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
-    "lucide-react": "^0.344.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "axios": "^1.20.0",
+    "lucide-vue-next": "^1.0.0",
+    "vue": "^3.5.43"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.2",
-    "@types/react": "^18.2.66",
-    "@types/react-dom": "^18.2.22",
-    "@vitejs/plugin-react": "^4.2.1",
+    "@vitejs/plugin-vue": "^6.0.9",
     "autoprefixer": "^10.4.18",
-    "concurrently": "^9.1.2",
-    "electron": "^44.5.1",
-    "electron-builder": "^26.0.12",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.2.2",
-    "vite": "^6.4.3",
-    "wait-on": "^8.0.3"
-  },
-  "build": {
-    "appId": "com.serendib.dmc.ops",
-    "productName": "Serendib DMC Ops",
-    "files": ["dist/**/*", "electron/**/*", "package.json"],
-    "asarUnpack": ["**/node_modules/better-sqlite3/**/*"],
-    "npmRebuild": false,
-    "win": {
-      "target": "nsis"
-    }
+    "vite": "^6.4.3"
   }
 }
