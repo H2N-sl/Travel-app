@@ -1,16 +1,16 @@
 <script setup lang="ts">
 /**
  * ==============================================================================
- * SERENDIB / METSHU DMC - OPERATIONS SYSTEM & BACK-OFFICE PORTAL
+ * SERENDIB / METSHU DMC - OPERATIONS SYSTEM & COMPLETE 6-STAGE LIFECYCLE
  * ==============================================================================
  * 
- * Features:
- * - Operations Dashboard (revenue metrics, active tours, agent statistics, inquiries)
- * - Bookings Management Data Table (with filtering, search, status, and itinerary inspector)
- * - Overseas Agents Directory & Registration
- * - Customer Trip Inquiries Pipeline (New, Contacted, Closed)
- * - OpenAPI 3.0 Endpoints & Laravel API Config modal
- * - Top button to return to the public website
+ * 6-STAGE RESERVATION LIFECYCLE PIPELINE:
+ * 1. Inquiry Intake (Lead Capture & Booking Record)
+ * 2. Itinerary & Resource Selection (Hotels, Meal Plans RO/BB/HB/FB, Transport, Chauffeur Guide)
+ * 3. Quotation & Costing Engine (Net Supplier Costs + Markup + Currency Converter)
+ * 4. Billing & Payment Processing (Pro-forma Invoices, Deposit & Balance Recording)
+ * 5. Confirmation & Service Vouchers (Hotel Check-in Vouchers, Driver Duty Slips with QR)
+ * 6. Client Communication Documents (Guest Welcome Letter, Travel Agreement, Post-Trip Survey)
  * ==============================================================================
  */
 
@@ -24,6 +24,8 @@ import {
   type Inquiry,
   type NewAgent,
   type NewBooking,
+  type LifecycleStage,
+  type ServiceVoucher
 } from '../services/api';
 import {
   LayoutDashboard,
@@ -43,7 +45,17 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowLeft,
-  Globe
+  Check,
+  CreditCard,
+  QrCode,
+  Printer,
+  ChevronRight,
+  Shield,
+  Clock,
+  Sparkles,
+  FileCheck,
+  Send,
+  Car
 } from 'lucide-vue-next';
 
 // Emit event to return to public website
@@ -52,7 +64,7 @@ const emit = defineEmits<{
 }>();
 
 // State
-const activeTab = ref<'dashboard' | 'bookings' | 'agents' | 'inquiries' | 'api-docs'>('dashboard');
+const activeTab = ref<'dashboard' | 'bookings' | 'lifecycle' | 'agents' | 'inquiries' | 'api-docs'>('dashboard');
 const bookings = ref<Booking[]>([]);
 const agents = ref<Agent[]>([]);
 const inquiries = ref<Inquiry[]>([]);
@@ -68,12 +80,34 @@ const connectionTestResult = ref<{ isOnline: boolean; message: string; url: stri
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
 
+// Selected Booking for 6-Stage Lifecycle Workspace
+const activeBooking = ref<Booking | null>(null);
+const currentStageTab = ref<number>(1);
+
+// Costing / Quotation Engine State
+const quoteMarkup = ref<number>(25);
+const quoteCurrency = ref<'LKR' | 'USD' | 'EUR' | 'GBP'>('LKR');
+const quoteCalculation = ref<any>(null);
+
+// Payment Recording Form
+const paymentForm = ref({
+  amount: 855000,
+  currency: 'LKR' as const,
+  type: 'deposit' as const,
+  method: 'stripe' as const,
+  reference: '',
+  notes: ''
+});
+
+// Generated Vouchers & Document State
+const generatedVouchers = ref<ServiceVoucher[]>([]);
+const activeDocType = ref<'welcome_letter' | 'travel_agreement' | 'thank_you_survey' | 'quotation'>('welcome_letter');
+const activeDocContent = ref<any>(null);
+
 // Modals
 const showBookingModal = ref(false);
 const showAgentModal = ref(false);
-const showItineraryModal = ref(false);
 const showApiConfigModal = ref(false);
-const selectedBooking = ref<Booking | null>(null);
 
 // Forms
 const bookingForm = ref<NewBooking>({
@@ -82,6 +116,7 @@ const bookingForm = ref<NewBooking>({
   nationality: 'British',
   pax_adults: 2,
   pax_children: 0,
+  pax_infants: 0,
   arrival_date: '2026-10-10',
   departure_date: '2026-10-17',
   arrival_flight: 'UL504 @ 12:40 PM',
@@ -141,6 +176,10 @@ const loadData = async () => {
     inquiries.value = inquiriesRes.data;
     apiSource.value = bookingsRes.source;
 
+    if (!activeBooking.value && bookings.value.length) {
+      activeBooking.value = bookings.value[0];
+    }
+
     if (agents.value.length && !bookingForm.value.agent_id) {
       bookingForm.value.agent_id = agents.value[0].id;
     }
@@ -151,10 +190,69 @@ const loadData = async () => {
   }
 };
 
+// Select Booking into the 6-Stage Lifecycle Workspace
+const openLifecycleWorkspace = async (b: Booking, stageNumber = 1) => {
+  activeBooking.value = b;
+  currentStageTab.value = stageNumber;
+  activeTab.value = 'lifecycle';
+  await refreshLifecycleData(b.id);
+};
+
+// Refresh data for current booking in lifecycle
+const refreshLifecycleData = async (bookingId: number) => {
+  const [quoteRes, vouchersRes, docRes] = await Promise.all([
+    apiClient.calculateQuote(bookingId, { markup_percentage: quoteMarkup.value, target_currency: quoteCurrency.value }),
+    apiClient.getVouchers(bookingId),
+    apiClient.getDocument(bookingId, activeDocType.value)
+  ]);
+  quoteCalculation.value = quoteRes.data;
+  generatedVouchers.value = vouchersRes.data;
+  activeDocContent.value = docRes.data;
+};
+
+// Re-calculate quotation with new markup
+const handleRecalculateQuote = async () => {
+  if (!activeBooking.value) return;
+  const res = await apiClient.calculateQuote(activeBooking.value.id, {
+    markup_percentage: quoteMarkup.value,
+    target_currency: quoteCurrency.value
+  });
+  quoteCalculation.value = res.data;
+  await loadData();
+};
+
+// Record payment transaction
+const handleRecordPayment = async () => {
+  if (!activeBooking.value) return;
+  await apiClient.recordPayment(activeBooking.value.id, paymentForm.value);
+  paymentForm.value.reference = '';
+  paymentForm.value.notes = '';
+  await loadData();
+  const updated = bookings.value.find(b => b.id === activeBooking.value?.id);
+  if (updated) activeBooking.value = updated;
+};
+
+// Load specific document type
+const loadDocumentType = async (type: 'welcome_letter' | 'travel_agreement' | 'thank_you_survey' | 'quotation') => {
+  if (!activeBooking.value) return;
+  activeDocType.value = type;
+  const res = await apiClient.getDocument(activeBooking.value.id, type);
+  activeDocContent.value = res.data;
+};
+
+// Advance lifecycle stage
+const advanceStage = async (stage: LifecycleStage) => {
+  if (!activeBooking.value) return;
+  await apiClient.updateLifecycleStage(activeBooking.value.id, stage);
+  await loadData();
+  const updated = bookings.value.find(b => b.id === activeBooking.value?.id);
+  if (updated) activeBooking.value = updated;
+};
+
 // Create Booking
 const submitBooking = async () => {
   try {
-    await apiClient.createBooking(bookingForm.value);
+    const res = await apiClient.createBooking(bookingForm.value);
     showBookingModal.value = false;
     bookingForm.value = {
       agent_id: agents.value[0]?.id || '',
@@ -162,6 +260,7 @@ const submitBooking = async () => {
       nationality: 'British',
       pax_adults: 2,
       pax_children: 0,
+      pax_infants: 0,
       arrival_date: '2026-10-10',
       departure_date: '2026-10-17',
       arrival_flight: 'UL504 @ 12:40 PM',
@@ -172,6 +271,7 @@ const submitBooking = async () => {
       special_requests: ''
     };
     await loadData();
+    openLifecycleWorkspace(res.data, 1);
   } catch (error) {
     console.error('Error creating booking via API:', error);
   }
@@ -204,12 +304,6 @@ const setInquiryStatus = async (id: number, status: Inquiry['status']) => {
   } catch (error) {
     console.error('Error updating inquiry status via API:', error);
   }
-};
-
-// Open Itinerary
-const openItinerary = (booking: Booking) => {
-  selectedBooking.value = booking;
-  showItineraryModal.value = true;
 };
 
 // Connection Test
@@ -256,7 +350,7 @@ onMounted(loadData);
           </div>
           <div>
             <h1 class="font-bold text-white text-sm tracking-wide">DMC Operations</h1>
-            <p class="text-[11px] text-emerald-400 font-medium">Vue 3 + Laravel REST</p>
+            <p class="text-[11px] text-emerald-400 font-medium">6-Stage Lifecycle Engine</p>
           </div>
         </div>
 
@@ -278,9 +372,24 @@ onMounted(loadData);
           >
             <span class="flex items-center gap-2.5">
               <Calendar class="w-4 h-4" />
-              <span>Bookings</span>
+              <span>Bookings Registry</span>
             </span>
             <span class="bg-slate-800 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-mono">{{ bookings.length }}</span>
+          </button>
+
+          <!-- 6-Stage Lifecycle Workspace -->
+          <button
+            @click="activeTab = 'lifecycle'"
+            :class="activeTab === 'lifecycle' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'"
+            class="w-full text-left px-3 py-2.5 rounded-lg transition-colors flex items-center justify-between"
+          >
+            <span class="flex items-center gap-2.5">
+              <Sparkles class="w-4 h-4 text-amber-400" />
+              <span>Lifecycle Pipeline</span>
+            </span>
+            <span v-if="activeBooking" class="bg-slate-800 text-amber-300 px-2 py-0.5 rounded text-[10px] font-mono">
+              Stage {{ currentStageTab }}/6
+            </span>
           </button>
 
           <button
@@ -354,9 +463,9 @@ onMounted(loadData);
             <ArrowLeft class="w-3 h-3" />
             <span>Site</span>
           </button>
-          <h2 class="text-sm font-bold text-white tracking-wide">DMC Tour Operations Workspace</h2>
+          <h2 class="text-sm font-bold text-white tracking-wide">DMC End-to-End Travel Reservation Engine</h2>
           <span class="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-mono">
-            Laravel Ready
+            Full 6-Stage Lifecycle
           </span>
         </div>
 
@@ -392,138 +501,514 @@ onMounted(loadData);
 
       <!-- Scrollable Tab Content Area -->
       <div class="flex-1 overflow-y-auto p-6">
-        <!-- TAB 1: OPERATIONS DASHBOARD -->
-        <div v-if="activeTab === 'dashboard'" class="space-y-6 max-w-7xl mx-auto">
-          <!-- Summary Metrics Cards -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
-              <div class="flex items-center justify-between text-slate-400">
-                <span class="text-xs font-medium uppercase tracking-wider">Gross Bookings Revenue</span>
-                <DollarSign class="w-4 h-4 text-emerald-400" />
+        
+        <!-- ================================================================== -->
+        <!-- VIEW: 6-STAGE RESERVATION LIFECYCLE PIPELINE WORKSPACE -->
+        <!-- ================================================================== -->
+        <div v-if="activeTab === 'lifecycle' && activeBooking" class="space-y-6 max-w-7xl mx-auto">
+          <!-- Active Booking Header Card -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div class="flex items-center gap-3">
+                  <span class="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded font-mono font-bold">
+                    {{ activeBooking.booking_number }}
+                  </span>
+                  <span
+                    class="text-xs font-bold uppercase px-2.5 py-0.5 rounded-full border"
+                    :class="{
+                      'bg-emerald-500/10 text-emerald-400 border-emerald-500/30': activeBooking.payment_status === 'fully_paid',
+                      'bg-amber-500/10 text-amber-400 border-amber-500/30': activeBooking.payment_status === 'deposit_paid',
+                      'bg-slate-800 text-slate-300 border-slate-700': activeBooking.payment_status === 'pending'
+                    }"
+                  >
+                    Payment: {{ activeBooking.payment_status }}
+                  </span>
+                </div>
+                <h3 class="text-xl font-bold text-white mt-1">{{ activeBooking.guest_name }}</h3>
+                <p class="text-xs text-slate-400">
+                  {{ activeBooking.nationality }} &bull; {{ activeBooking.pax_adults }} Adults, {{ activeBooking.pax_children }} Children &bull; 
+                  Agent: <span class="text-emerald-400 font-semibold">{{ activeBooking.agent?.name || 'Direct Client' }}</span>
+                </p>
               </div>
-              <p class="text-2xl font-bold font-mono text-white mt-2">LKR {{ totalRevenue.toLocaleString() }}</p>
-              <p class="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
-                <TrendingUp class="w-3 h-3" /> Average margin: ~25%
-              </p>
+
+              <!-- Quick Booking Switcher Dropdown -->
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-slate-400">Select Booking:</span>
+                <select
+                  :value="activeBooking.id"
+                  @change="(e) => {
+                    const b = bookings.find(item => item.id === Number((e.target as HTMLSelectElement).value));
+                    if (b) openLifecycleWorkspace(b, currentStageTab);
+                  }"
+                  class="bg-slate-950 border border-slate-800 text-xs text-white rounded-lg p-2 outline-none font-mono"
+                >
+                  <option v-for="b in bookings" :key="b.id" :value="b.id">
+                    {{ b.booking_number }} - {{ b.guest_name }}
+                  </option>
+                </select>
+              </div>
             </div>
 
-            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
-              <div class="flex items-center justify-between text-slate-400">
-                <span class="text-xs font-medium uppercase tracking-wider">Active Tours</span>
-                <Calendar class="w-4 h-4 text-sky-400" />
+            <!-- 6-STAGE INTERACTIVE LIFECYCLE PROGRESS BAR -->
+            <div class="pt-4 border-t border-slate-800">
+              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+                <button
+                  v-for="(st, idx) in [
+                    { num: 1, title: '1. Lead & Intake', subtitle: 'Capture & Init' },
+                    { num: 2, title: '2. Itinerary & Res', subtitle: 'Hotels & Fleet' },
+                    { num: 3, title: '3. Costing & Quote', subtitle: 'Markup & Pricing' },
+                    { num: 4, title: '4. Billing & Invoicing', subtitle: 'Payments' },
+                    { num: 5, title: '5. Vouchers & QR', subtitle: 'Supplier Passes' },
+                    { num: 6, title: '6. Docs & Wrap-up', subtitle: 'Welcome & Review' }
+                  ]"
+                  :key="st.num"
+                  @click="currentStageTab = st.num; refreshLifecycleData(activeBooking.id);"
+                  :class="currentStageTab === st.num
+                    ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg'
+                    : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'"
+                  class="p-2.5 rounded-xl border text-left transition-all"
+                >
+                  <span class="block font-bold text-[11px] truncate">{{ st.title }}</span>
+                  <span class="block text-[10px] opacity-75 truncate">{{ st.subtitle }}</span>
+                </button>
               </div>
-              <p class="text-2xl font-bold font-mono text-white mt-2">{{ activeBookingsCount }}</p>
-              <p class="text-[11px] text-slate-400 mt-1">Confirmed &amp; in-operation circuits</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
-              <div class="flex items-center justify-between text-slate-400">
-                <span class="text-xs font-medium uppercase tracking-wider">Partner Tour Agents</span>
-                <Users class="w-4 h-4 text-amber-400" />
-              </div>
-              <p class="text-2xl font-bold font-mono text-white mt-2">{{ agents.length }}</p>
-              <p class="text-[11px] text-slate-400 mt-1">Overseas tour operators</p>
-            </div>
-
-            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
-              <div class="flex items-center justify-between text-slate-400">
-                <span class="text-xs font-medium uppercase tracking-wider">Pending Inquiries</span>
-                <FileText class="w-4 h-4 text-rose-400" />
-              </div>
-              <p class="text-2xl font-bold font-mono text-white mt-2">{{ inquiries.filter(i => i.status === 'New').length }}</p>
-              <p class="text-[11px] text-amber-400 mt-1">From metshutravels.com website</p>
             </div>
           </div>
 
-          <!-- Preview Grid -->
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-5 space-y-4">
-              <div class="flex items-center justify-between">
-                <h3 class="text-sm font-bold text-white">Recent Operations</h3>
-                <button @click="activeTab = 'bookings'" class="text-xs text-emerald-400 hover:underline">
-                  View Full Table &rarr;
-                </button>
+          <!-- ================================================================ -->
+          <!-- STAGE 1: INQUIRY & INTAKE RECORD -->
+          <!-- ================================================================ -->
+          <div v-if="currentStageTab === 1" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h4 class="text-base font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs">1</span>
+                  <span>Stage 1: Lead Capture &amp; Reservation Initialization</span>
+                </h4>
+                <p class="text-xs text-slate-400 mt-1">Generates unique booking reference, logs passenger headcount, flights, and client requirements.</p>
+              </div>
+              <button
+                @click="currentStageTab = 2"
+                class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5"
+              >
+                <span>Proceed to Stage 2: Itinerary &rarr;</span>
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+              <div class="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <h5 class="font-bold text-emerald-400 text-xs uppercase tracking-wider">Party &amp; Client Details</h5>
+                <p><span class="text-slate-500">Booking Reference:</span> <strong class="text-white font-mono">{{ activeBooking.booking_number }}</strong></p>
+                <p><span class="text-slate-500">Lead Guest:</span> <strong class="text-white">{{ activeBooking.guest_name }}</strong></p>
+                <p><span class="text-slate-500">Nationality:</span> {{ activeBooking.nationality }}</p>
+                <p><span class="text-slate-500">Party Headcount:</span> {{ activeBooking.pax_adults }} Adults, {{ activeBooking.pax_children }} Children</p>
+                <p><span class="text-slate-500">Overseas Wholesale Agent:</span> {{ activeBooking.agent?.name || 'Direct Client' }} ({{ activeBooking.agent?.code || 'DIR' }})</p>
               </div>
 
-              <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs">
-                  <thead class="text-slate-400 border-b border-slate-800 uppercase text-[10px]">
-                    <tr>
-                      <th class="pb-2">Booking Ref</th>
-                      <th class="pb-2">Guest</th>
-                      <th class="pb-2">Arrival</th>
-                      <th class="pb-2">Status</th>
-                      <th class="pb-2 text-right">Revenue</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-800 text-slate-300">
-                    <tr v-for="b in bookings.slice(0, 5)" :key="b.id" class="hover:bg-slate-800/40">
-                      <td class="py-3 font-mono font-bold text-emerald-400">{{ b.booking_number }}</td>
-                      <td class="py-3 font-medium text-white">{{ b.guest_name }}</td>
-                      <td class="py-3 font-mono text-slate-400">{{ b.arrival_date }}</td>
-                      <td class="py-3">
-                        <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full text-[10px] font-semibold">
-                          {{ b.status }}
-                        </span>
-                      </td>
-                      <td class="py-3 text-right font-mono font-bold text-white">
-                        LKR {{ Number(b.revenue_lkr).toLocaleString() }}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
+                <h5 class="font-bold text-emerald-400 text-xs uppercase tracking-wider">Flight Schedule &amp; Requests</h5>
+                <p><span class="text-slate-500">Travel Period:</span> {{ activeBooking.arrival_date }} &rarr; {{ activeBooking.departure_date }}</p>
+                <p><span class="text-slate-500">Arrival Flight:</span> {{ activeBooking.arrival_flight }}</p>
+                <p><span class="text-slate-500">Departure Flight:</span> {{ activeBooking.departure_flight }}</p>
+                <p><span class="text-slate-500">Special Notes / Dietary:</span> <span class="italic text-slate-300">"{{ activeBooking.special_requests || 'No special requests logged' }}"</span></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- STAGE 2: ITINERARY & RESOURCE ALLOCATION -->
+          <!-- ================================================================ -->
+          <div v-else-if="currentStageTab === 2" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h4 class="text-base font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs">2</span>
+                  <span>Stage 2: Itinerary Building &amp; Resource Allocation</span>
+                </h4>
+                <p class="text-xs text-slate-400 mt-1">Assign hotel room categories, meal plans (RO, BB, HB, FB, AI), vehicle class, and certified guide.</p>
+              </div>
+              <button
+                @click="currentStageTab = 3; handleRecalculateQuote();"
+                class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5"
+              >
+                <span>Proceed to Stage 3: Costing &rarr;</span>
+              </button>
+            </div>
+
+            <!-- Resource Allocation Summary (Fleet & Guide) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Assigned Fleet Vehicle</span>
+                <p class="font-bold text-white text-sm flex items-center gap-2">
+                  <Car class="w-4 h-4 text-emerald-400" />
+                  <span>{{ activeBooking.transport_type }}</span>
+                </p>
+                <p class="text-xs text-slate-400">Air-conditioned executive vehicle with dedicated luggage capacity.</p>
+              </div>
+
+              <div class="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Allocated National Chauffeur-Guide</span>
+                <p class="font-bold text-white text-sm flex items-center gap-2">
+                  <Users class="w-4 h-4 text-emerald-400" />
+                  <span>{{ activeBooking.driver_guide }}</span>
+                </p>
+                <p class="text-xs text-slate-400">Phone: {{ activeBooking.driver_phone || '+94 77 123 4567' }} &bull; Language: {{ activeBooking.driver_language || 'English' }}</p>
               </div>
             </div>
 
-            <!-- Backend Connection Status Card -->
-            <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between">
-                  <h3 class="text-sm font-bold text-white">Laravel REST API</h3>
-                  <span
-                    class="text-[10px] px-2 py-0.5 rounded font-mono font-semibold"
-                    :class="apiSource === 'laravel' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'"
-                  >
-                    {{ apiSource === 'laravel' ? 'CONNECTED' : 'LOCAL MOCK' }}
-                  </span>
-                </div>
-                <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-                  Target endpoint: <code class="text-emerald-400 font-mono text-[11px]">{{ currentApiUrl }}</code>. When Laravel is running on port 8000, click test connection to verify.
-                </p>
-
-                <div class="mt-4 pt-3 border-t border-slate-800">
-                  <button
-                    @click="runConnectionTest"
-                    :disabled="isTestingConnection"
-                    class="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 p-2.5 rounded-lg text-xs font-semibold text-slate-200 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Activity class="w-3.5 h-3.5 text-emerald-400" :class="{ 'animate-pulse': isTestingConnection }" />
-                    <span>{{ isTestingConnection ? 'Testing Connection...' : 'Test Backend Connection' }}</span>
-                  </button>
-
-                  <div
-                    v-if="connectionTestResult"
-                    class="mt-2 p-2 rounded text-[11px] flex items-start gap-2"
-                    :class="connectionTestResult.isOnline ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'"
-                  >
-                    <component :is="connectionTestResult.isOnline ? CheckCircle2 : AlertTriangle" class="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>{{ connectionTestResult.message }}</span>
+            <!-- Day-by-Day Hotel & Excursion Plan with Meal Plan Badges -->
+            <div class="space-y-3">
+              <h5 class="font-bold text-white text-xs uppercase tracking-wider">Day-by-Day Hotel &amp; Meal Allocations</h5>
+              <div
+                v-for="d in activeBooking.itinerary_days"
+                :key="d.id || d.day_number"
+                class="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2"
+              >
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2">
+                  <span class="font-bold text-emerald-400 font-mono">Day {{ d.day_number }}: {{ d.destination }} &bull; {{ d.date }}</span>
+                  <div class="flex items-center gap-2">
+                    <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded">
+                      Meal Plan: {{ d.meal_plan || 'HB' }}
+                    </span>
+                    <span class="text-slate-400 text-[11px]">{{ d.room_category || 'Deluxe Room' }}</span>
                   </div>
+                </div>
+                <p class="text-xs font-semibold text-white">Hotel: {{ d.hotel_name }}</p>
+                <p class="text-xs text-slate-300">{{ d.activities }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- STAGE 3: COSTING & QUOTATION ENGINE -->
+          <!-- ================================================================ -->
+          <div v-else-if="currentStageTab === 3" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h4 class="text-base font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs">3</span>
+                  <span>Stage 3: Financial Costing &amp; Quotation Engine</span>
+                </h4>
+                <p class="text-xs text-slate-400 mt-1">Calculates net supplier costs, applies DMC markup, and outputs gross pricing in multiple currencies.</p>
+              </div>
+              <button
+                @click="currentStageTab = 4"
+                class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5"
+              >
+                <span>Proceed to Stage 4: Billing &rarr;</span>
+              </button>
+            </div>
+
+            <!-- Costing Engine Controls -->
+            <div class="bg-slate-950 p-5 rounded-xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-6 items-center">
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">DMC Markup Margin (%): <span class="text-emerald-400 font-bold font-mono">{{ quoteMarkup }}%</span></label>
+                <input
+                  v-model.number="quoteMarkup"
+                  type="range"
+                  min="10"
+                  max="45"
+                  step="1"
+                  @change="handleRecalculateQuote"
+                  class="w-full accent-emerald-500"
+                />
+                <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                  <span>10% (Low Wholesale)</span>
+                  <span>25% (Standard)</span>
+                  <span>45% (High Luxury)</span>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-slate-300 mb-1">Target Currency Display</label>
+                <div class="flex gap-2">
+                  <button
+                    v-for="curr in ['LKR', 'USD', 'EUR', 'GBP']"
+                    :key="curr"
+                    @click="quoteCurrency = curr as any; handleRecalculateQuote();"
+                    :class="quoteCurrency === curr ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-400 border border-slate-800'"
+                    class="flex-1 py-2 text-xs font-bold rounded-lg transition-colors font-mono"
+                  >
+                    {{ curr }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Net Supplier Costs Breakdown Table -->
+            <div class="border border-slate-800 rounded-xl overflow-hidden">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800">
+                  <tr>
+                    <th class="p-3">Cost Component</th>
+                    <th class="p-3">Calculation Basis</th>
+                    <th class="p-3 text-right">Net Supplier Amount (LKR)</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800 text-slate-300">
+                  <tr>
+                    <td class="p-3 font-semibold text-white">Hotel Accommodations (Net)</td>
+                    <td class="p-3 text-slate-400">Selected 4/5-star properties per night</td>
+                    <td class="p-3 text-right font-mono">LKR {{ (activeBooking.expenses_hotels || 1250000).toLocaleString() }}</td>
+                  </tr>
+                  <tr>
+                    <td class="p-3 font-semibold text-white">Transport &amp; Fuel Allowance</td>
+                    <td class="p-3 text-slate-400">{{ activeBooking.transport_type }} (All mileage included)</td>
+                    <td class="p-3 text-right font-mono">LKR {{ (activeBooking.expenses_transport || 420000).toLocaleString() }}</td>
+                  </tr>
+                  <tr>
+                    <td class="p-3 font-semibold text-white">Licensed Guide Allowance &amp; Board</td>
+                    <td class="p-3 text-slate-400">Daily national tourist guide lecturer fee</td>
+                    <td class="p-3 text-right font-mono">LKR {{ (activeBooking.expenses_guide || 140000).toLocaleString() }}</td>
+                  </tr>
+                  <tr>
+                    <td class="p-3 font-semibold text-white">Excursion Tickets &amp; Safari Jeeps</td>
+                    <td class="p-3 text-slate-400">Yala 4x4, Sigiriya entrance, train tickets</td>
+                    <td class="p-3 text-right font-mono">LKR {{ (activeBooking.expenses_activities || 210000).toLocaleString() }}</td>
+                  </tr>
+                  <tr class="bg-slate-950 font-bold">
+                    <td colspan="2" class="p-4 text-slate-300 uppercase text-[11px]">Total Net Supplier Costs:</td>
+                    <td class="p-4 text-right font-mono text-white text-sm">
+                      LKR {{ ((activeBooking.expenses_hotels || 1250000) + (activeBooking.expenses_transport || 420000) + (activeBooking.expenses_guide || 140000) + (activeBooking.expenses_activities || 210000)).toLocaleString() }}
+                    </td>
+                  </tr>
+                  <tr class="bg-emerald-950/40 text-emerald-400 font-bold">
+                    <td colspan="2" class="p-4 uppercase text-xs">Gross Tour Quotation (+ {{ quoteMarkup }}% DMC Margin):</td>
+                    <td class="p-4 text-right font-mono text-base text-emerald-400">
+                      LKR {{ activeBooking.revenue_lkr.toLocaleString() }}
+                      <span class="block text-[11px] font-normal text-emerald-300">approx. ${{ activeBooking.revenue_usd || Math.round(activeBooking.revenue_lkr / 300) }} USD</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- STAGE 4: BILLING & PAYMENT PROCESSING -->
+          <!-- ================================================================ -->
+          <div v-else-if="currentStageTab === 4" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h4 class="text-base font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs">4</span>
+                  <span>Stage 4: Invoicing, Receipts &amp; Payment Processing</span>
+                </h4>
+                <p class="text-xs text-slate-400 mt-1">Record deposits, track balance payments, and update state machine (pending &rarr; deposit_paid &rarr; fully_paid).</p>
+              </div>
+              <button
+                @click="currentStageTab = 5"
+                class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5"
+              >
+                <span>Proceed to Stage 5: Vouchers &rarr;</span>
+              </button>
+            </div>
+
+            <!-- Ledger Summary -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div class="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                <span class="text-[10px] text-slate-500 uppercase font-semibold">Total Invoiced Amount</span>
+                <p class="text-xl font-bold font-mono text-white">LKR {{ activeBooking.revenue_lkr.toLocaleString() }}</p>
+              </div>
+
+              <div class="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                <span class="text-[10px] text-slate-500 uppercase font-semibold">Total Received</span>
+                <p class="text-xl font-bold font-mono text-emerald-400">
+                  LKR {{ (activeBooking.payments || []).reduce((acc, p) => acc + p.amount, 0).toLocaleString() }}
+                </p>
+              </div>
+
+              <div class="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+                <span class="text-[10px] text-slate-500 uppercase font-semibold">Remaining Balance</span>
+                <p class="text-xl font-bold font-mono text-amber-400">
+                  LKR {{ Math.max(0, activeBooking.revenue_lkr - (activeBooking.payments || []).reduce((acc, p) => acc + p.amount, 0)).toLocaleString() }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Payment Record Form -->
+            <div class="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4">
+              <h5 class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <CreditCard class="w-4 h-4 text-emerald-400" />
+                <span>Record New Transaction / Wire Transfer</span>
+              </h5>
+
+              <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <label class="block text-slate-400 mb-1">Amount (LKR)</label>
+                  <input v-model.number="paymentForm.amount" type="number" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-white font-mono" />
+                </div>
+                <div>
+                  <label class="block text-slate-400 mb-1">Payment Type</label>
+                  <select v-model="paymentForm.type" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-white">
+                    <option value="deposit">Deposit Payment (30%)</option>
+                    <option value="balance">Balance Settlement (70%)</option>
+                    <option value="full">Full Payment (100%)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-slate-400 mb-1">Payment Gateway / Method</label>
+                  <select v-model="paymentForm.method" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-white">
+                    <option value="stripe">Stripe Online</option>
+                    <option value="payhere">PayHere Gateway</option>
+                    <option value="bank_transfer">Wire / Bank Transfer</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-slate-400 mb-1">Transaction Ref</label>
+                  <input v-model="paymentForm.reference" placeholder="e.g. TX-90218" class="w-full bg-slate-900 border border-slate-800 rounded p-2 text-white font-mono" />
                 </div>
               </div>
 
               <button
-                @click="showApiConfigModal = true"
-                class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+                @click="handleRecordPayment"
+                class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg"
               >
-                <Server class="w-3.5 h-3.5 text-emerald-400" />
-                <span>Change API Base URL</span>
+                + Log Payment Receipt
               </button>
+            </div>
+
+            <!-- Transaction Ledger Table -->
+            <div class="border border-slate-800 rounded-xl overflow-hidden">
+              <table class="w-full text-left text-xs font-mono">
+                <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] font-sans border-b border-slate-800">
+                  <tr>
+                    <th class="p-3">Transaction ID</th>
+                    <th class="p-3">Date</th>
+                    <th class="p-3">Type</th>
+                    <th class="p-3">Method</th>
+                    <th class="p-3">Reference</th>
+                    <th class="p-3 text-right">Amount (LKR)</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800 text-slate-300">
+                  <tr v-for="p in activeBooking.payments" :key="p.id">
+                    <td class="p-3 text-emerald-400 font-bold">{{ p.id }}</td>
+                    <td class="p-3 text-slate-400">{{ p.date }}</td>
+                    <td class="p-3 uppercase text-[11px]">{{ p.type }}</td>
+                    <td class="p-3 uppercase text-[11px]">{{ p.method }}</td>
+                    <td class="p-3 text-slate-400">{{ p.reference }}</td>
+                    <td class="p-3 text-right font-bold text-white">{{ p.amount.toLocaleString() }}</td>
+                  </tr>
+                  <tr v-if="!activeBooking.payments || !activeBooking.payments.length">
+                    <td colspan="6" class="p-4 text-center text-slate-500 font-sans">No payments recorded yet.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- STAGE 5: SERVICE VOUCHERS & QR DISPATCH -->
+          <!-- ================================================================ -->
+          <div v-else-if="currentStageTab === 5" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h4 class="text-base font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs">5</span>
+                  <span>Stage 5: Booking Confirmation &amp; Service Voucher Dispatch</span>
+                </h4>
+                <p class="text-xs text-slate-400 mt-1">Generates digital check-in vouchers, driver duty slips, and verification QR tokens for partner hotels.</p>
+              </div>
+              <button
+                @click="currentStageTab = 6"
+                class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5"
+              >
+                <span>Proceed to Stage 6: Client Docs &rarr;</span>
+              </button>
+            </div>
+
+            <!-- Vouchers Cards List -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div
+                v-for="vouch in generatedVouchers"
+                :key="vouch.id"
+                class="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-3 relative overflow-hidden"
+              >
+                <div class="flex items-start justify-between">
+                  <div>
+                    <span class="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded">
+                      {{ vouch.verification_token }}
+                    </span>
+                    <h5 class="font-bold text-white text-sm mt-1.5">{{ vouch.title }}</h5>
+                    <p class="text-xs text-slate-400">{{ vouch.supplier_name }} &bull; Valid: {{ vouch.valid_date }}</p>
+                  </div>
+
+                  <!-- QR Code Icon Box -->
+                  <div class="w-12 h-12 rounded-lg bg-white p-1 flex items-center justify-center text-slate-950 shrink-0">
+                    <QrCode class="w-10 h-10" />
+                  </div>
+                </div>
+
+                <div class="text-xs text-slate-300 space-y-1 pt-2 border-t border-slate-800/80">
+                  <p><span class="text-slate-500">Service:</span> {{ vouch.service_details }}</p>
+                  <p><span class="text-slate-500">Allocated:</span> {{ vouch.room_or_vehicle }}</p>
+                </div>
+
+                <div class="pt-2 flex justify-end">
+                  <button
+                    onclick="window.print()"
+                    class="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 font-semibold"
+                  >
+                    <Printer class="w-3.5 h-3.5" />
+                    <span>Print Voucher</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- STAGE 6: AUTOMATED CLIENT DOCUMENTS & POST-TRIP -->
+          <!-- ================================================================ -->
+          <div v-else-if="currentStageTab === 6" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <h4 class="text-base font-bold text-white flex items-center gap-2">
+                  <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs">6</span>
+                  <span>Stage 6: Client Documentation &amp; Post-Trip Wrap-up</span>
+                </h4>
+                <p class="text-xs text-slate-400 mt-1">Guest arrival Welcome Letter, Legal Terms Agreement, and post-trip feedback review survey.</p>
+              </div>
+              <span class="text-xs text-emerald-400 font-mono font-bold">Lifecycle Complete</span>
+            </div>
+
+            <!-- Document Selector Tabs -->
+            <div class="flex gap-2 border-b border-slate-800 pb-3">
+              <button
+                v-for="d in [
+                  { type: 'welcome_letter', label: 'Guest Welcome Letter' },
+                  { type: 'travel_agreement', label: 'Legal Travel Agreement' },
+                  { type: 'thank_you_survey', label: 'Post-Trip Survey & Review' }
+                ]"
+                :key="d.type"
+                @click="loadDocumentType(d.type as any)"
+                :class="activeDocType === d.type ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-950 text-slate-400 border border-slate-800'"
+                class="px-4 py-2 rounded-lg text-xs transition-colors"
+              >
+                {{ d.label }}
+              </button>
+            </div>
+
+            <!-- Document Render Preview -->
+            <div class="bg-white text-slate-900 p-8 rounded-xl shadow-xl max-w-3xl mx-auto space-y-4">
+              <div class="flex items-center justify-between border-b pb-3 text-xs text-slate-500">
+                <span>Serendib &amp; Metshu DMC Client Documentation</span>
+                <button onclick="window.print()" class="text-emerald-700 font-bold flex items-center gap-1 hover:underline">
+                  <Printer class="w-4 h-4" /> Print Document
+                </button>
+              </div>
+
+              <!-- Render HTML payload dynamically -->
+              <div v-if="activeDocContent" v-html="activeDocContent.content_html"></div>
             </div>
           </div>
         </div>
 
-        <!-- TAB 2: BOOKINGS TABLE -->
+        <!-- ================================================================== -->
+        <!-- VIEW: BOOKINGS REGISTRY TABLE -->
+        <!-- ================================================================== -->
         <div v-else-if="activeTab === 'bookings'" class="space-y-4 max-w-7xl mx-auto">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-xl">
             <div class="flex items-center gap-2 flex-1 max-w-md bg-slate-950 border border-slate-800 rounded-lg px-3 py-2">
@@ -566,10 +1051,9 @@ onMounted(loadData);
                     <th class="p-4">Guest Name</th>
                     <th class="p-4">Pax</th>
                     <th class="p-4">Dates</th>
-                    <th class="p-4">Transport &amp; Guide</th>
-                    <th class="p-4">Status</th>
+                    <th class="p-4">Payment</th>
                     <th class="p-4 text-right">Revenue (LKR)</th>
-                    <th class="p-4 text-center">Itinerary</th>
+                    <th class="p-4 text-center">Lifecycle Action</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-800 text-slate-300">
@@ -587,13 +1071,16 @@ onMounted(loadData);
                     <td class="p-4 font-mono text-[11px] text-slate-400">
                       {{ b.arrival_date }} &rarr; {{ b.departure_date }}
                     </td>
-                    <td class="p-4 text-[11px] text-slate-300">
-                      <p class="truncate max-w-[140px]">{{ b.transport_type }}</p>
-                      <p class="text-[10px] text-slate-500 truncate max-w-[140px]">{{ b.driver_guide }}</p>
-                    </td>
                     <td class="p-4">
-                      <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-full text-[10px] font-bold">
-                        {{ b.status }}
+                      <span
+                        class="px-2.5 py-0.5 rounded-full text-[10px] font-bold border"
+                        :class="{
+                          'bg-emerald-500/10 text-emerald-400 border-emerald-500/30': b.payment_status === 'fully_paid',
+                          'bg-amber-500/10 text-amber-400 border-amber-500/30': b.payment_status === 'deposit_paid',
+                          'bg-slate-800 text-slate-300 border-slate-700': b.payment_status === 'pending'
+                        }"
+                      >
+                        {{ b.payment_status }}
                       </span>
                     </td>
                     <td class="p-4 text-right font-mono font-bold text-white">
@@ -601,10 +1088,11 @@ onMounted(loadData);
                     </td>
                     <td class="p-4 text-center">
                       <button
-                        @click="openItinerary(b)"
-                        class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1 rounded text-[11px] font-semibold transition-colors"
+                        @click="openLifecycleWorkspace(b, 1)"
+                        class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 mx-auto shadow-md"
                       >
-                        {{ b.itinerary_days?.length || 0 }} Days
+                        <span>Manage Lifecycle</span>
+                        <ChevronRight class="w-3.5 h-3.5" />
                       </button>
                     </td>
                   </tr>
@@ -614,7 +1102,84 @@ onMounted(loadData);
           </div>
         </div>
 
-        <!-- TAB 3: AGENTS -->
+        <!-- ================================================================== -->
+        <!-- VIEW: DASHBOARD VIEW -->
+        <!-- ================================================================== -->
+        <div v-else-if="activeTab === 'dashboard'" class="space-y-6 max-w-7xl mx-auto">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
+              <div class="flex items-center justify-between text-slate-400">
+                <span class="text-xs font-medium uppercase tracking-wider">Gross Bookings Revenue</span>
+                <DollarSign class="w-4 h-4 text-emerald-400" />
+              </div>
+              <p class="text-2xl font-bold font-mono text-white mt-2">LKR {{ totalRevenue.toLocaleString() }}</p>
+              <p class="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
+                <TrendingUp class="w-3 h-3" /> Average margin: ~25%
+              </p>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
+              <div class="flex items-center justify-between text-slate-400">
+                <span class="text-xs font-medium uppercase tracking-wider">Active Tours</span>
+                <Calendar class="w-4 h-4 text-sky-400" />
+              </div>
+              <p class="text-2xl font-bold font-mono text-white mt-2">{{ activeBookingsCount }}</p>
+              <p class="text-[11px] text-slate-400 mt-1">Confirmed &amp; in-operation circuits</p>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
+              <div class="flex items-center justify-between text-slate-400">
+                <span class="text-xs font-medium uppercase tracking-wider">Partner Tour Agents</span>
+                <Users class="w-4 h-4 text-amber-400" />
+              </div>
+              <p class="text-2xl font-bold font-mono text-white mt-2">{{ agents.length }}</p>
+              <p class="text-[11px] text-slate-400 mt-1">Overseas tour operators</p>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
+              <div class="flex items-center justify-between text-slate-400">
+                <span class="text-xs font-medium uppercase tracking-wider">Pending Inquiries</span>
+                <FileText class="w-4 h-4 text-rose-400" />
+              </div>
+              <p class="text-2xl font-bold font-mono text-white mt-2">{{ inquiries.filter(i => i.status === 'New').length }}</p>
+              <p class="text-[11px] text-amber-400 mt-1">From metshutravels.com website</p>
+            </div>
+          </div>
+
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <h3 class="text-sm font-bold text-white">6-Stage Lifecycle Overview</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-lg">
+                <span class="font-bold text-emerald-400 block mb-1">1. Intake &amp; Reservation</span>
+                <p class="text-slate-400 text-[11px]">Direct website inquiries and wholesale overseas agents.</p>
+              </div>
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-lg">
+                <span class="font-bold text-emerald-400 block mb-1">2. Resource Allocation</span>
+                <p class="text-slate-400 text-[11px]">Room plans (RO/BB/HB/FB), AC vehicles, certified guide.</p>
+              </div>
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-lg">
+                <span class="font-bold text-emerald-400 block mb-1">3. Quotation Engine</span>
+                <p class="text-slate-400 text-[11px]">Net costs + dynamic markup margin (LKR/USD/EUR/GBP).</p>
+              </div>
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-lg">
+                <span class="font-bold text-emerald-400 block mb-1">4. Billing &amp; Invoicing</span>
+                <p class="text-slate-400 text-[11px]">Deposits, balances, Stripe and bank wire logging.</p>
+              </div>
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-lg">
+                <span class="font-bold text-emerald-400 block mb-1">5. Vouchers &amp; QR Tokens</span>
+                <p class="text-slate-400 text-[11px]">Hotel check-in vouchers and driver duty slips.</p>
+              </div>
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-lg">
+                <span class="font-bold text-emerald-400 block mb-1">6. Client Docs &amp; Survey</span>
+                <p class="text-slate-400 text-[11px]">Arrival Welcome Letter and post-trip review requests.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================================================================== -->
+        <!-- VIEW: AGENTS -->
+        <!-- ================================================================== -->
         <div v-else-if="activeTab === 'agents'" class="space-y-4 max-w-7xl mx-auto">
           <div class="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-xl">
             <div>
@@ -661,7 +1226,9 @@ onMounted(loadData);
           </div>
         </div>
 
-        <!-- TAB 4: INQUIRIES -->
+        <!-- ================================================================== -->
+        <!-- VIEW: INQUIRIES -->
+        <!-- ================================================================== -->
         <div v-else-if="activeTab === 'inquiries'" class="space-y-4 max-w-7xl mx-auto">
           <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
             <div>
@@ -725,17 +1292,19 @@ onMounted(loadData);
           </div>
         </div>
 
-        <!-- TAB 5: OPENAPI SPECS -->
+        <!-- ================================================================== -->
+        <!-- VIEW: OPENAPI SPECS -->
+        <!-- ================================================================== -->
         <div v-else-if="activeTab === 'api-docs'" class="space-y-6 max-w-7xl mx-auto">
           <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 class="text-base font-bold text-white flex items-center gap-2">
                   <Code2 class="w-5 h-5 text-emerald-400" />
-                  <span>OpenAPI 3.0 Endpoints Specification</span>
+                  <span>DMC Reservation Lifecycle OpenAPI Specification</span>
                 </h3>
                 <p class="text-xs text-slate-400 mt-1">
-                  Ready-to-use contracts for the separate Laravel backend developer.
+                  Full contracts for all 6 stages of the reservation life cycle.
                 </p>
               </div>
 
@@ -752,60 +1321,46 @@ onMounted(loadData);
               <table class="w-full text-left text-xs font-mono">
                 <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800 font-sans font-semibold">
                   <tr>
-                    <th class="p-3">Method</th>
-                    <th class="p-3">URI Endpoint</th>
-                    <th class="p-3 font-sans">Laravel Controller Action</th>
-                    <th class="p-3 font-sans">Payload / Response</th>
+                    <th class="p-3">Stage</th>
+                    <th class="p-3">HTTP &amp; Endpoint</th>
+                    <th class="p-3 font-sans">Action Description</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-800 text-slate-300">
-                  <tr class="hover:bg-slate-800/30">
-                    <td class="p-3"><span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">GET</span></td>
-                    <td class="p-3 text-white">/api/agents</td>
-                    <td class="p-3 font-sans text-slate-400">AgentController@index — Return all agents</td>
-                    <td class="p-3 text-slate-400">response()->json(Agent::all(), 200)</td>
+                  <tr>
+                    <td class="p-3 text-emerald-400 font-sans font-bold">1. Intake</td>
+                    <td class="p-3 text-white"><span class="bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded mr-2">POST</span>/api/v1/bookings</td>
+                    <td class="p-3 font-sans text-slate-400">Initialize reservation draft &amp; party records</td>
                   </tr>
-                  <tr class="hover:bg-slate-800/30">
-                    <td class="p-3"><span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-bold">POST</span></td>
-                    <td class="p-3 text-white">/api/agents</td>
-                    <td class="p-3 font-sans text-slate-400">AgentController@store — Register new agent</td>
-                    <td class="p-3 text-slate-400">Validates request, returns 201 Created</td>
+                  <tr>
+                    <td class="p-3 text-emerald-400 font-sans font-bold">2. Itinerary</td>
+                    <td class="p-3 text-white"><span class="bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded mr-2">PUT</span>/api/v1/bookings/{id}/itinerary</td>
+                    <td class="p-3 font-sans text-slate-400">Bulk update hotels, room categories &amp; meal plans</td>
                   </tr>
-                  <tr class="hover:bg-slate-800/30">
-                    <td class="p-3"><span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">GET</span></td>
-                    <td class="p-3 text-white">/api/bookings</td>
-                    <td class="p-3 font-sans text-slate-400">BookingController@index — With eager relations</td>
-                    <td class="p-3 text-slate-400">Booking::with(['agent', 'itineraryDays'])->latest()->get()</td>
+                  <tr>
+                    <td class="p-3 text-emerald-400 font-sans font-bold">2. Fleet</td>
+                    <td class="p-3 text-white"><span class="bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded mr-2">PUT</span>/api/v1/bookings/{id}/allocations</td>
+                    <td class="p-3 font-sans text-slate-400">Assign vehicle type &amp; certified chauffeur-guide</td>
                   </tr>
-                  <tr class="hover:bg-slate-800/30">
-                    <td class="p-3"><span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-bold">POST</span></td>
-                    <td class="p-3 text-white">/api/bookings</td>
-                    <td class="p-3 font-sans text-slate-400">BookingController@store — Generate seq &amp; Day 1 plan</td>
-                    <td class="p-3 text-slate-400">Auto-generates {CODE}-{YEAR}-{0001} reference &rarr; 201</td>
+                  <tr>
+                    <td class="p-3 text-emerald-400 font-sans font-bold">3. Costing</td>
+                    <td class="p-3 text-white"><span class="bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded mr-2">POST</span>/api/v1/bookings/{id}/calculate-quote</td>
+                    <td class="p-3 font-sans text-slate-400">Calculate net supplier costs &amp; dynamic markup</td>
                   </tr>
-                  <tr class="hover:bg-slate-800/30">
-                    <td class="p-3"><span class="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-bold">PUT</span></td>
-                    <td class="p-3 text-white">/api/bookings/{id}/itinerary</td>
-                    <td class="p-3 font-sans text-slate-400">BookingController@updateItinerary — Replace days</td>
-                    <td class="p-3 text-slate-400">Body: { days: [...] } &rarr; 200 JSON</td>
+                  <tr>
+                    <td class="p-3 text-emerald-400 font-sans font-bold">4. Invoicing</td>
+                    <td class="p-3 text-white"><span class="bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded mr-2">POST</span>/api/v1/bookings/{id}/payments</td>
+                    <td class="p-3 font-sans text-slate-400">Record deposit &amp; balance settlement transactions</td>
                   </tr>
-                  <tr class="hover:bg-slate-800/30">
-                    <td class="p-3"><span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">GET</span></td>
-                    <td class="p-3 text-white">/api/inquiries</td>
-                    <td class="p-3 font-sans text-slate-400">InquiryController@index — Client journey inquiries</td>
-                    <td class="p-3 text-slate-400">response()->json(Inquiry::latest()->get(), 200)</td>
+                  <tr>
+                    <td class="p-3 text-emerald-400 font-sans font-bold">5. Vouchers</td>
+                    <td class="p-3 text-white"><span class="bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded mr-2">GET</span>/api/v1/bookings/{id}/vouchers</td>
+                    <td class="p-3 font-sans text-slate-400">Fetch hotel check-in vouchers &amp; QR codes</td>
                   </tr>
-                  <tr class="hover:bg-slate-800/30">
-                    <td class="p-3"><span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-bold">POST</span></td>
-                    <td class="p-3 text-white">/api/inquiries</td>
-                    <td class="p-3 font-sans text-slate-400">InquiryController@store — Customer submissions</td>
-                    <td class="p-3 text-slate-400">Body: { full_name, email, ... } &rarr; 201 JSON</td>
-                  </tr>
-                  <tr class="hover:bg-slate-800/30">
-                    <td class="p-3"><span class="bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded font-bold">PATCH</span></td>
-                    <td class="p-3 text-white">/api/inquiries/{id}/status</td>
-                    <td class="p-3 font-sans text-slate-400">InquiryController@updateStatus — Set status</td>
-                    <td class="p-3 text-slate-400">Body: { status: 'New' | 'Contacted' | 'Closed' }</td>
+                  <tr>
+                    <td class="p-3 text-emerald-400 font-sans font-bold">6. Documents</td>
+                    <td class="p-3 text-white"><span class="bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded mr-2">GET</span>/api/v1/bookings/{id}/documents/{type}</td>
+                    <td class="p-3 font-sans text-slate-400">Welcome Letter, Agreement, and Review email HTML</td>
                   </tr>
                 </tbody>
               </table>
@@ -819,7 +1374,7 @@ onMounted(loadData);
     <div v-if="showBookingModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-xl p-6 space-y-4 text-xs">
         <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-          <h3 class="font-bold text-white text-sm">Create New Tour Reservation</h3>
+          <h3 class="font-bold text-white text-sm">Initialize New Tour Reservation</h3>
           <button @click="showBookingModal = false" class="text-slate-400 hover:text-white">✕</button>
         </div>
 
@@ -844,7 +1399,7 @@ onMounted(loadData);
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="block text-slate-400 mb-1">Adults</label>
               <input v-model.number="bookingForm.pax_adults" type="number" min="1" max="50" required class="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-white" />
@@ -852,6 +1407,10 @@ onMounted(loadData);
             <div>
               <label class="block text-slate-400 mb-1">Children</label>
               <input v-model.number="bookingForm.pax_children" type="number" min="0" max="30" class="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-white" />
+            </div>
+            <div>
+              <label class="block text-slate-400 mb-1">Infants</label>
+              <input v-model.number="bookingForm.pax_infants" type="number" min="0" max="10" class="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-white" />
             </div>
           </div>
 
@@ -878,7 +1437,7 @@ onMounted(loadData);
           </div>
 
           <div>
-            <label class="block text-slate-400 mb-1">Total Agreed Revenue (LKR)</label>
+            <label class="block text-slate-400 mb-1">Initial Agreed Revenue (LKR)</label>
             <input v-model.number="bookingForm.revenue_lkr" type="number" required class="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-white font-mono" />
           </div>
 
@@ -889,7 +1448,7 @@ onMounted(loadData);
 
           <div class="flex justify-end space-x-2 pt-3 border-t border-slate-800">
             <button type="button" @click="showBookingModal = false" class="bg-slate-800 px-4 py-2 rounded text-slate-300 hover:bg-slate-700">Cancel</button>
-            <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded text-white font-semibold shadow-lg shadow-emerald-950">Save Reservation</button>
+            <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded text-white font-semibold shadow-lg shadow-emerald-950">Initialize Reservation</button>
           </div>
         </form>
       </div>
@@ -943,44 +1502,7 @@ onMounted(loadData);
       </div>
     </div>
 
-    <!-- MODAL 3: ITINERARY DETAILS -->
-    <div v-if="showItineraryModal && selectedBooking" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-2xl p-6 space-y-4 text-xs max-h-[85vh] flex flex-col">
-        <div class="flex justify-between items-center border-b border-slate-800 pb-3">
-          <div>
-            <h3 class="font-bold text-white text-sm">
-              Itinerary Schedule: <span class="font-mono text-emerald-400">{{ selectedBooking.booking_number }}</span>
-            </h3>
-            <p class="text-xs text-slate-400 mt-0.5">{{ selectedBooking.guest_name }} &bull; {{ selectedBooking.pax_adults }} Adults, {{ selectedBooking.pax_children }} Children</p>
-          </div>
-          <button @click="showItineraryModal = false" class="text-slate-400 hover:text-white">✕</button>
-        </div>
-
-        <div class="flex-1 overflow-y-auto space-y-3 pr-1">
-          <div
-            v-for="(day, idx) in selectedBooking.itinerary_days"
-            :key="day.id || idx"
-            class="bg-slate-950 border border-slate-800 p-3.5 rounded-lg space-y-1.5"
-          >
-            <div class="flex items-center justify-between text-slate-400 font-mono text-[11px]">
-              <span class="text-emerald-400 font-bold uppercase">Day {{ day.day_number || idx + 1 }} &bull; {{ day.destination }}</span>
-              <span>{{ day.date }}</span>
-            </div>
-            <p class="font-semibold text-white text-xs">Hotel: {{ day.hotel_name }} ({{ day.meals }})</p>
-            <p class="text-slate-300 text-xs">{{ day.activities }}</p>
-            <p class="text-[10px] text-slate-500 font-mono">Transport: {{ day.transport }}</p>
-          </div>
-        </div>
-
-        <div class="flex justify-end pt-3 border-t border-slate-800">
-          <button @click="showItineraryModal = false" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded text-xs font-semibold">
-            Close Itinerary
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL 4: CONFIGURE API BASE URL & TEST LARAVEL -->
+    <!-- MODAL 3: CONFIGURE API BASE URL & TEST LARAVEL -->
     <div v-if="showApiConfigModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 text-xs">
         <div class="flex justify-between items-center border-b border-slate-800 pb-3">
