@@ -1,4 +1,32 @@
 <script setup lang="ts">
+/**
+ * ==============================================================================
+ * SERENDIB DMC - VUE 3 OPERATIONS SINGLE PAGE APPLICATION (SPA)
+ * ==============================================================================
+ * 
+ * ARCHITECTURE OVERVIEW:
+ * - Framework: Vue 3 Composition API with TypeScript (<script setup lang="ts">)
+ * - Styling: Tailwind CSS utility classes
+ * - Icons: Lucide Vue Next
+ * - API Client: Axios instance with Laravel REST conventions (apiClient from ./services/api)
+ * 
+ * REST ENDPOINTS CONSUMED:
+ * 1. GET  /api/agents              -> List overseas tour agents
+ * 2. POST /api/agents              -> Register new overseas tour agent
+ * 3. GET  /api/bookings            -> List reservations with eager relations
+ * 4. POST /api/bookings            -> Create new booking & generate reference
+ * 5. PUT  /api/bookings/:id/itinerary -> Update day-by-day itinerary schedule
+ * 6. GET  /api/inquiries           -> List traveller journey inquiries
+ * 7. POST /api/inquiries           -> Submit traveller journey inquiry
+ * 8. PATCH /api/inquiries/:id/status -> Update inquiry workflow pipeline
+ * 
+ * LARAVEL INTEGRATION & URL CHANGING:
+ * - Default URL: http://127.0.0.1:8000/api
+ * - You can change the backend URL anytime in the "Configure Backend Target" modal
+ * - If Laravel is offline, the app automatically falls back to local storage
+ * ==============================================================================
+ */
+
 import { ref, computed, onMounted } from 'vue';
 import {
   apiClient,
@@ -9,7 +37,6 @@ import {
   type Inquiry,
   type NewAgent,
   type NewBooking,
-  type ItineraryDay
 } from './services/api';
 import {
   LayoutDashboard,
@@ -23,35 +50,49 @@ import {
   MapPin,
   RefreshCw,
   Search,
-  CheckCircle,
-  Clock,
-  ExternalLink,
   Code2,
   Server,
-  X
+  Activity,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-vue-next';
 
-// State
+// ------------------------------------------------------------------------------
+// REACTIVE STATE MANAGEMENT
+// ------------------------------------------------------------------------------
+
+/** Active navigation tab in the sidebar */
 const activeTab = ref<'dashboard' | 'bookings' | 'agents' | 'inquiries' | 'api-docs'>('dashboard');
+
+/** Main data collections populated from Laravel REST endpoints */
 const bookings = ref<Booking[]>([]);
 const agents = ref<Agent[]>([]);
 const inquiries = ref<Inquiry[]>([]);
+
+/** Network & loading indicators */
 const loading = ref(false);
 const apiSource = ref<'laravel' | 'mock'>('mock');
 const currentApiUrl = ref(getStoredApiBaseUrl());
 
-// Search & Filter
+/** Connection testing state */
+const isTestingConnection = ref(false);
+const connectionTestResult = ref<{ isOnline: boolean; message: string; url: string } | null>(null);
+
+/** Search input and status filter for the Bookings table */
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
 
-// Modals
+/** Modal visibility flags */
 const showBookingModal = ref(false);
 const showAgentModal = ref(false);
 const showItineraryModal = ref(false);
 const showApiConfigModal = ref(false);
 const selectedBooking = ref<Booking | null>(null);
 
-// Forms
+/**
+ * Form state for creating a new booking (POST /api/bookings)
+ * Default values provided for rapid testing.
+ */
 const bookingForm = ref<NewBooking>({
   agent_id: '',
   guest_name: '',
@@ -68,6 +109,9 @@ const bookingForm = ref<NewBooking>({
   special_requests: 'Honeymoon arrangement, vegetarian meal.'
 });
 
+/**
+ * Form state for registering a new overseas partner agent (POST /api/agents)
+ */
 const agentForm = ref<NewAgent>({
   code: '',
   name: '',
@@ -77,29 +121,47 @@ const agentForm = ref<NewAgent>({
   phone: ''
 });
 
+/** Temporary storage for API base URL input inside the config modal */
 const tempApiUrl = ref(currentApiUrl.value);
 
-// Computed stats
+// ------------------------------------------------------------------------------
+// COMPUTED DERIVED METRICS
+// ------------------------------------------------------------------------------
+
+/** Sum of all bookings revenue in Sri Lankan Rupees (LKR) */
 const totalRevenue = computed(() => {
   return bookings.value.reduce((acc, b) => acc + (Number(b.revenue_lkr) || 0), 0);
 });
 
+/** Count of operations currently running or confirmed */
 const activeBookingsCount = computed(() => {
   return bookings.value.filter(b => b.status === 'In Operation' || b.status === 'Confirmed').length;
 });
 
+/** Reactive filter for the bookings data table */
 const filteredBookings = computed(() => {
   return bookings.value.filter(b => {
+    const query = searchQuery.value.toLowerCase().trim();
     const matchesSearch =
-      b.booking_number.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      b.guest_name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      (b.agent?.name || '').toLowerCase().includes(searchQuery.value.toLowerCase());
+      !query ||
+      b.booking_number.toLowerCase().includes(query) ||
+      b.guest_name.toLowerCase().includes(query) ||
+      (b.agent?.name || '').toLowerCase().includes(query) ||
+      b.nationality.toLowerCase().includes(query);
+
     const matchesStatus = statusFilter.value === 'ALL' || b.status === statusFilter.value;
     return matchesSearch && matchesStatus;
   });
 });
 
-// Load all data
+// ------------------------------------------------------------------------------
+// API DATA SYNCHRONIZATION METHODS
+// ------------------------------------------------------------------------------
+
+/**
+ * Fetches all collections in parallel from the Laravel REST API.
+ * Identifies whether data originated from real Laravel or local mock.
+ */
 const loadData = async () => {
   loading.value = true;
   try {
@@ -113,21 +175,25 @@ const loadData = async () => {
     inquiries.value = inquiriesRes.data;
     apiSource.value = bookingsRes.source;
 
+    // Automatically set default agent dropdown if not selected
     if (agents.value.length && !bookingForm.value.agent_id) {
       bookingForm.value.agent_id = agents.value[0].id;
     }
   } catch (error) {
-    console.error('Failed to load data:', error);
+    console.error('Failed to load operations data from API:', error);
   } finally {
     loading.value = false;
   }
 };
 
-// Create Booking
+/**
+ * Creates a new booking via POST /api/bookings and re-fetches the table
+ */
 const submitBooking = async () => {
   try {
     await apiClient.createBooking(bookingForm.value);
     showBookingModal.value = false;
+    // Reset form fields
     bookingForm.value = {
       agent_id: agents.value[0]?.id || '',
       guest_name: '',
@@ -145,15 +211,18 @@ const submitBooking = async () => {
     };
     await loadData();
   } catch (error) {
-    console.error('Error creating booking:', error);
+    console.error('Error creating booking via API:', error);
   }
 };
 
-// Create Agent
+/**
+ * Registers an overseas agent via POST /api/agents and updates list
+ */
 const submitAgent = async () => {
   try {
     await apiClient.createAgent(agentForm.value);
     showAgentModal.value = false;
+    // Reset form fields
     agentForm.value = {
       code: '',
       name: '',
@@ -164,55 +233,81 @@ const submitAgent = async () => {
     };
     await loadData();
   } catch (error) {
-    console.error('Error creating agent:', error);
+    console.error('Error creating agent via API:', error);
   }
 };
 
-// Update Inquiry Status
+/**
+ * Updates inquiry status via PATCH /api/inquiries/:id/status
+ */
 const setInquiryStatus = async (id: number, status: Inquiry['status']) => {
   try {
     await apiClient.updateInquiryStatus(id, status);
     await loadData();
   } catch (error) {
-    console.error('Error updating inquiry status:', error);
+    console.error('Error updating inquiry status via API:', error);
   }
 };
 
-// Open Itinerary
+/**
+ * Opens the Itinerary Day modal for a specific booking
+ */
 const openItinerary = (booking: Booking) => {
   selectedBooking.value = booking;
   showItineraryModal.value = true;
 };
 
-// Update API Base URL
+/**
+ * Tests live connection to the configured Laravel REST API
+ */
+const runConnectionTest = async () => {
+  isTestingConnection.value = true;
+  connectionTestResult.value = null;
+  try {
+    connectionTestResult.value = await apiClient.checkConnection();
+  } finally {
+    isTestingConnection.value = false;
+  }
+};
+
+/**
+ * Saves a new API base URL to localStorage and triggers reconnection
+ */
 const saveApiUrl = () => {
   setStoredApiBaseUrl(tempApiUrl.value);
   currentApiUrl.value = tempApiUrl.value;
   showApiConfigModal.value = false;
+  connectionTestResult.value = null;
   loadData();
 };
 
+// Mount hook: load initial data
 onMounted(loadData);
 </script>
 
 <template>
+  <!-- Main Application Wrapper (Tailwind CSS dark palette) -->
   <div class="flex h-screen bg-slate-950 text-slate-100 font-sans antialiased overflow-hidden">
-    <!-- Sidebar -->
+    
+    <!-- ==================================================================== -->
+    <!-- 1. SIDEBAR NAVIGATION -->
+    <!-- ==================================================================== -->
     <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0">
       <div class="p-5">
-        <!-- Brand Header -->
+        <!-- Brand / Identity -->
         <div class="flex items-center space-x-3 pb-5 border-b border-slate-800">
           <div class="bg-emerald-600 p-2.5 rounded-xl font-bold text-white shadow-lg shadow-emerald-950 flex items-center justify-center">
             <Compass class="w-5 h-5" />
           </div>
           <div>
             <h1 class="font-bold text-white text-sm tracking-wide">Serendib DMC</h1>
-            <p class="text-[11px] text-emerald-400 font-medium">Vue 3 + Laravel REST API</p>
+            <p class="text-[11px] text-emerald-400 font-medium">Vue 3 + Laravel REST</p>
           </div>
         </div>
 
-        <!-- Navigation -->
+        <!-- Navigation Links -->
         <nav class="mt-6 space-y-1 text-xs font-semibold">
+          <!-- Operations Dashboard -->
           <button
             @click="activeTab = 'dashboard'"
             :class="activeTab === 'dashboard' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'"
@@ -222,6 +317,7 @@ onMounted(loadData);
             <span>Operations Dashboard</span>
           </button>
 
+          <!-- Bookings Management -->
           <button
             @click="activeTab = 'bookings'"
             :class="activeTab === 'bookings' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'"
@@ -234,6 +330,7 @@ onMounted(loadData);
             <span class="bg-slate-800 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-mono">{{ bookings.length }}</span>
           </button>
 
+          <!-- Overseas Agents -->
           <button
             @click="activeTab = 'agents'"
             :class="activeTab === 'agents' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'"
@@ -246,6 +343,7 @@ onMounted(loadData);
             <span class="bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full text-[10px] font-mono">{{ agents.length }}</span>
           </button>
 
+          <!-- Trip Inquiries -->
           <button
             @click="activeTab = 'inquiries'"
             :class="activeTab === 'inquiries' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'"
@@ -258,6 +356,7 @@ onMounted(loadData);
             <span class="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold">{{ inquiries.filter(i => i.status === 'New').length }}</span>
           </button>
 
+          <!-- OpenAPI Endpoints & Contracts -->
           <button
             @click="activeTab = 'api-docs'"
             :class="activeTab === 'api-docs' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-800 hover:text-white'"
@@ -269,11 +368,12 @@ onMounted(loadData);
         </nav>
       </div>
 
-      <!-- Sidebar Footer API Indicator -->
+      <!-- Sidebar Footer: Laravel Connection Status -->
       <div class="p-4 border-t border-slate-800 bg-slate-950/60">
         <button
           @click="showApiConfigModal = true"
           class="w-full flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors text-left"
+          title="Click to configure or change the Laravel API URL"
         >
           <div class="flex items-center gap-2 min-w-0">
             <span
@@ -282,7 +382,7 @@ onMounted(loadData);
             ></span>
             <div class="truncate">
               <p class="text-[11px] font-semibold text-white truncate">
-                {{ apiSource === 'laravel' ? 'Laravel API Online' : 'Mock API Active' }}
+                {{ apiSource === 'laravel' ? 'Laravel Connected' : 'Local Mock Active' }}
               </p>
               <p class="text-[10px] text-slate-400 truncate">{{ currentApiUrl }}</p>
             </div>
@@ -292,23 +392,26 @@ onMounted(loadData);
       </div>
     </aside>
 
-    <!-- Main Workspace -->
+    <!-- ==================================================================== -->
+    <!-- 2. MAIN WORKSPACE -->
+    <!-- ==================================================================== -->
     <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
-      <!-- Header -->
+      <!-- Top Action Header -->
       <header class="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur px-6 flex items-center justify-between shrink-0">
         <div class="flex items-center gap-3">
-          <h2 class="text-sm font-bold text-white tracking-wide">Sri Lanka DMC Operations Platform</h2>
+          <h2 class="text-sm font-bold text-white tracking-wide">Serendib DMC Operations System</h2>
           <span class="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-mono">
-            Vue 3 SPA
+            REST API Ready
           </span>
         </div>
 
+        <!-- Quick Action Buttons -->
         <div class="flex items-center gap-2.5">
           <button
             @click="loadData"
             :disabled="loading"
             class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-3 py-2 rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50"
-            title="Reload API data"
+            title="Sync latest data from Laravel backend"
           >
             <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': loading }" />
             <span>Sync</span>
@@ -332,12 +435,16 @@ onMounted(loadData);
         </div>
       </header>
 
-      <!-- Content Area -->
+      <!-- Scrollable Tab Content Area -->
       <div class="flex-1 overflow-y-auto p-6">
-        <!-- 1. DASHBOARD VIEW -->
+        
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 1: OPERATIONS DASHBOARD -->
+        <!-- ------------------------------------------------------------------ -->
         <div v-if="activeTab === 'dashboard'" class="space-y-6 max-w-7xl mx-auto">
-          <!-- Metric Cards -->
+          <!-- Summary Metrics Cards -->
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Gross Revenue -->
             <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
               <div class="flex items-center justify-between text-slate-400">
                 <span class="text-xs font-medium uppercase tracking-wider">Gross Bookings Revenue</span>
@@ -349,6 +456,7 @@ onMounted(loadData);
               </p>
             </div>
 
+            <!-- Active Tours -->
             <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
               <div class="flex items-center justify-between text-slate-400">
                 <span class="text-xs font-medium uppercase tracking-wider">Active Tours</span>
@@ -358,33 +466,35 @@ onMounted(loadData);
               <p class="text-[11px] text-slate-400 mt-1">Confirmed & in-operation circuits</p>
             </div>
 
+            <!-- Partner Tour Agents -->
             <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
               <div class="flex items-center justify-between text-slate-400">
                 <span class="text-xs font-medium uppercase tracking-wider">Partner Tour Agents</span>
                 <Users class="w-4 h-4 text-amber-400" />
               </div>
               <p class="text-2xl font-bold font-mono text-white mt-2">{{ agents.length }}</p>
-              <p class="text-[11px] text-slate-400 mt-1">UK, Europe & Scandinavian agents</p>
+              <p class="text-[11px] text-slate-400 mt-1">Overseas tour operators</p>
             </div>
 
+            <!-- Pending Inquiries -->
             <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow-sm">
               <div class="flex items-center justify-between text-slate-400">
-                <span class="text-xs font-medium uppercase tracking-wider">New Inquiries</span>
+                <span class="text-xs font-medium uppercase tracking-wider">Pending Inquiries</span>
                 <FileText class="w-4 h-4 text-rose-400" />
               </div>
               <p class="text-2xl font-bold font-mono text-white mt-2">{{ inquiries.filter(i => i.status === 'New').length }}</p>
-              <p class="text-[11px] text-amber-400 mt-1">Pending follow-up quote</p>
+              <p class="text-[11px] text-amber-400 mt-1">Awaiting itinerary quote</p>
             </div>
           </div>
 
           <!-- Quick Preview Grid -->
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Recent Bookings -->
+            <!-- Recent Bookings Table Preview -->
             <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden p-5 space-y-4">
               <div class="flex items-center justify-between">
                 <h3 class="text-sm font-bold text-white">Recent Operations</h3>
                 <button @click="activeTab = 'bookings'" class="text-xs text-emerald-400 hover:underline">
-                  View All &rarr;
+                  View Full Table &rarr;
                 </button>
               </div>
 
@@ -418,50 +528,59 @@ onMounted(loadData);
               </div>
             </div>
 
-            <!-- API Status & Backend Integration Card -->
+            <!-- Backend Connection Status Card -->
             <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 flex flex-col justify-between">
               <div>
                 <div class="flex items-center justify-between">
-                  <h3 class="text-sm font-bold text-white">Laravel 12 Backend</h3>
+                  <h3 class="text-sm font-bold text-white">Laravel REST API Status</h3>
                   <span
                     class="text-[10px] px-2 py-0.5 rounded font-mono font-semibold"
-                    :class="apiSource === 'laravel' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'"
+                    :class="apiSource === 'laravel' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'"
                   >
-                    {{ apiSource === 'laravel' ? 'CONNECTED' : 'MOCK FALLBACK' }}
+                    {{ apiSource === 'laravel' ? 'CONNECTED' : 'LOCAL MOCK' }}
                   </span>
                 </div>
                 <p class="text-xs text-slate-400 mt-2 leading-relaxed">
-                  The frontend is structured to communicate with Laravel REST endpoints. If your Laravel server (<code class="text-emerald-400 font-mono text-[11px]">http://127.0.0.1:8000/api</code>) is offline, it safely persists changes in the browser mock store.
+                  The Vue 3 frontend communicates with your Laravel REST API endpoints (<code class="text-emerald-400 font-mono text-[11px]">{{ currentApiUrl }}</code>). When your backend is offline, changes are safely saved in local storage.
                 </p>
 
-                <div class="mt-4 p-3 bg-slate-950 border border-slate-800 rounded-lg space-y-2 text-xs">
-                  <div class="flex justify-between text-slate-400 text-[11px]">
-                    <span>Target API:</span>
-                    <span class="font-mono text-white">{{ currentApiUrl }}</span>
-                  </div>
-                  <div class="flex justify-between text-slate-400 text-[11px]">
-                    <span>Format:</span>
-                    <span class="font-mono text-emerald-400">JSON REST</span>
-                  </div>
-                  <div class="flex justify-between text-slate-400 text-[11px]">
-                    <span>OpenAPI Spec:</span>
-                    <span class="font-mono text-white">3.0.3 Ready</span>
+                <!-- Connection test button -->
+                <div class="mt-4 pt-3 border-t border-slate-800">
+                  <button
+                    @click="runConnectionTest"
+                    :disabled="isTestingConnection"
+                    class="w-full bg-slate-950 border border-slate-800 hover:border-slate-700 p-2.5 rounded-lg text-xs font-semibold text-slate-200 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Activity class="w-3.5 h-3.5 text-emerald-400" :class="{ 'animate-pulse': isTestingConnection }" />
+                    <span>{{ isTestingConnection ? 'Testing Connection...' : 'Test Backend Connection' }}</span>
+                  </button>
+
+                  <!-- Test Result Notice -->
+                  <div
+                    v-if="connectionTestResult"
+                    class="mt-2 p-2 rounded text-[11px] flex items-start gap-2"
+                    :class="connectionTestResult.isOnline ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'"
+                  >
+                    <component :is="connectionTestResult.isOnline ? CheckCircle2 : AlertTriangle" class="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{{ connectionTestResult.message }}</span>
                   </div>
                 </div>
               </div>
 
               <button
-                @click="activeTab = 'api-docs'"
+                @click="showApiConfigModal = true"
                 class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5"
               >
-                <Code2 class="w-3.5 h-3.5" />
-                <span>View OpenAPI Endpoints Spec</span>
+                <Server class="w-3.5 h-3.5 text-emerald-400" />
+                <span>Change API Base URL</span>
               </button>
             </div>
           </div>
         </div>
 
-        <!-- 2. BOOKINGS MANAGEMENT VIEW -->
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 2: BOOKINGS MANAGEMENT TABLE -->
+        <!-- ------------------------------------------------------------------ -->
         <div v-else-if="activeTab === 'bookings'" class="space-y-4 max-w-7xl mx-auto">
           <!-- Filter and Search Bar -->
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-xl">
@@ -469,7 +588,7 @@ onMounted(loadData);
               <Search class="w-4 h-4 text-slate-500" />
               <input
                 v-model="searchQuery"
-                placeholder="Search booking #, guest name, agent..."
+                placeholder="Search booking ref, guest name, agent code..."
                 class="bg-transparent text-xs text-white placeholder-slate-500 outline-none w-full"
               />
             </div>
@@ -495,7 +614,7 @@ onMounted(loadData);
             </div>
           </div>
 
-          <!-- Data Table -->
+          <!-- Full Bookings Data Table -->
           <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
             <div class="overflow-x-auto">
               <table class="w-full text-left text-xs">
@@ -506,7 +625,7 @@ onMounted(loadData);
                     <th class="p-4">Guest Name</th>
                     <th class="p-4">Pax</th>
                     <th class="p-4">Dates</th>
-                    <th class="p-4">Vehicle & Guide</th>
+                    <th class="p-4">Transport & Guide</th>
                     <th class="p-4">Status</th>
                     <th class="p-4 text-right">Revenue (LKR)</th>
                     <th class="p-4 text-center">Itinerary</th>
@@ -516,7 +635,7 @@ onMounted(loadData);
                   <tr v-for="b in filteredBookings" :key="b.id" class="hover:bg-slate-800/40 transition-colors">
                     <td class="p-4 font-mono font-bold text-emerald-400">{{ b.booking_number }}</td>
                     <td class="p-4 font-medium text-slate-200">
-                      {{ b.agent ? b.agent.name : 'Direct' }}
+                      {{ b.agent ? b.agent.name : 'Direct Booking' }}
                       <span v-if="b.agent" class="text-[10px] text-slate-500 block font-mono">({{ b.agent.code }})</span>
                     </td>
                     <td class="p-4">
@@ -559,12 +678,14 @@ onMounted(loadData);
           </div>
         </div>
 
-        <!-- 3. OVERSEAS AGENTS VIEW -->
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 3: OVERSEAS AGENTS DIRECTORY -->
+        <!-- ------------------------------------------------------------------ -->
         <div v-else-if="activeTab === 'agents'" class="space-y-4 max-w-7xl mx-auto">
           <div class="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-xl">
             <div>
               <h3 class="text-sm font-bold text-white">Overseas Travel Agents</h3>
-              <p class="text-xs text-slate-400">Tour operators & wholesalers sending inbound groups to Sri Lanka</p>
+              <p class="text-xs text-slate-400">Registered wholesalers and tour operators sending groups to Sri Lanka</p>
             </div>
             <button
               @click="showAgentModal = true"
@@ -575,6 +696,7 @@ onMounted(loadData);
             </button>
           </div>
 
+          <!-- Cards Grid -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div
               v-for="a in agents"
@@ -606,12 +728,14 @@ onMounted(loadData);
           </div>
         </div>
 
-        <!-- 4. TRIP INQUIRIES VIEW -->
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 4: TRIP INQUIRIES WORKFLOW -->
+        <!-- ------------------------------------------------------------------ -->
         <div v-else-if="activeTab === 'inquiries'" class="space-y-4 max-w-7xl mx-auto">
           <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
             <div>
-              <h3 class="text-sm font-bold text-white">Public Journey Inquiries</h3>
-              <p class="text-xs text-slate-400">Direct inquiries received from traveller portal forms</p>
+              <h3 class="text-sm font-bold text-white">Customer Trip Inquiries</h3>
+              <p class="text-xs text-slate-400">Direct inquiries from website traveller journey requests</p>
             </div>
             <span class="text-xs font-mono text-slate-400">Total: {{ inquiries.length }}</span>
           </div>
@@ -670,10 +794,12 @@ onMounted(loadData);
           </div>
         </div>
 
-        <!-- 5. OPENAPI ENDPOINTS & LARAVEL DOCS VIEW -->
+        <!-- ------------------------------------------------------------------ -->
+        <!-- TAB 5: OPENAPI 3.0 SPECIFICATION & LARAVEL DOCS -->
+        <!-- ------------------------------------------------------------------ -->
         <div v-else-if="activeTab === 'api-docs'" class="space-y-6 max-w-7xl mx-auto">
           <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 class="text-base font-bold text-white flex items-center gap-2">
                   <Code2 class="w-5 h-5 text-emerald-400" />
@@ -686,7 +812,7 @@ onMounted(loadData);
 
               <button
                 @click="showApiConfigModal = true"
-                class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5"
+                class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 self-start sm:self-auto"
               >
                 <Server class="w-3.5 h-3.5 text-emerald-400" />
                 <span>Configure API URL</span>
@@ -698,9 +824,9 @@ onMounted(loadData);
               <table class="w-full text-left text-xs font-mono">
                 <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] border-b border-slate-800 font-sans font-semibold">
                   <tr>
-                    <th class="p-3">HTTP Method</th>
+                    <th class="p-3">Method</th>
                     <th class="p-3">URI Endpoint</th>
-                    <th class="p-3 font-sans">Controller & Purpose</th>
+                    <th class="p-3 font-sans">Laravel Controller Action</th>
                     <th class="p-3 font-sans">Payload / Response</th>
                   </tr>
                 </thead>
@@ -708,26 +834,26 @@ onMounted(loadData);
                   <tr class="hover:bg-slate-800/30">
                     <td class="p-3"><span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">GET</span></td>
                     <td class="p-3 text-white">/api/agents</td>
-                    <td class="p-3 font-sans text-slate-400">AgentController@index — List all overseas agents</td>
-                    <td class="p-3 text-slate-400">Returns 200 JSON Array of Agent models</td>
+                    <td class="p-3 font-sans text-slate-400">AgentController@index — Return all agents</td>
+                    <td class="p-3 text-slate-400">response()->json(Agent::all(), 200)</td>
                   </tr>
                   <tr class="hover:bg-slate-800/30">
                     <td class="p-3"><span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-bold">POST</span></td>
                     <td class="p-3 text-white">/api/agents</td>
-                    <td class="p-3 font-sans text-slate-400">AgentController@store — Register overseas agent</td>
-                    <td class="p-3 text-slate-400">Body: { code, name, country, contact_person, email, phone } &rarr; 201 JSON</td>
+                    <td class="p-3 font-sans text-slate-400">AgentController@store — Register new agent</td>
+                    <td class="p-3 text-slate-400">Validates request, returns 201 Created</td>
                   </tr>
                   <tr class="hover:bg-slate-800/30">
                     <td class="p-3"><span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">GET</span></td>
                     <td class="p-3 text-white">/api/bookings</td>
-                    <td class="p-3 font-sans text-slate-400">BookingController@index — With agent and itinerary days</td>
+                    <td class="p-3 font-sans text-slate-400">BookingController@index — With eager relations</td>
                     <td class="p-3 text-slate-400">Booking::with(['agent', 'itineraryDays'])->latest()->get()</td>
                   </tr>
                   <tr class="hover:bg-slate-800/30">
                     <td class="p-3"><span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-bold">POST</span></td>
                     <td class="p-3 text-white">/api/bookings</td>
                     <td class="p-3 font-sans text-slate-400">BookingController@store — Generate seq & Day 1 plan</td>
-                    <td class="p-3 text-slate-400">Auto-generates {CODE}-{YEAR}-{0001} reference &rarr; 201 JSON</td>
+                    <td class="p-3 text-slate-400">Auto-generates {CODE}-{YEAR}-{0001} reference &rarr; 201</td>
                   </tr>
                   <tr class="hover:bg-slate-800/30">
                     <td class="p-3"><span class="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded font-bold">PUT</span></td>
@@ -739,13 +865,13 @@ onMounted(loadData);
                     <td class="p-3"><span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">GET</span></td>
                     <td class="p-3 text-white">/api/inquiries</td>
                     <td class="p-3 font-sans text-slate-400">InquiryController@index — Client journey inquiries</td>
-                    <td class="p-3 text-slate-400">Returns 200 JSON Array of Inquiries</td>
+                    <td class="p-3 text-slate-400">response()->json(Inquiry::latest()->get(), 200)</td>
                   </tr>
                   <tr class="hover:bg-slate-800/30">
                     <td class="p-3"><span class="bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-bold">POST</span></td>
                     <td class="p-3 text-white">/api/inquiries</td>
                     <td class="p-3 font-sans text-slate-400">InquiryController@store — Customer submissions</td>
-                    <td class="p-3 text-slate-400">Body: { full_name, email, nationality, ... } &rarr; 201 JSON</td>
+                    <td class="p-3 text-slate-400">Body: { full_name, email, ... } &rarr; 201 JSON</td>
                   </tr>
                   <tr class="hover:bg-slate-800/30">
                     <td class="p-3"><span class="bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded font-bold">PATCH</span></td>
@@ -757,21 +883,24 @@ onMounted(loadData);
               </table>
             </div>
 
-            <!-- Laravel Controller Snippet for Developer -->
+            <!-- Laravel api.php code snippet for developer -->
             <div class="space-y-2">
-              <h4 class="text-xs font-bold text-white">Sample Laravel Route Definition (routes/api.php)</h4>
+              <h4 class="text-xs font-bold text-white">Laravel Routes Definition (routes/api.php)</h4>
               <pre class="bg-slate-950 p-4 rounded-lg border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto leading-relaxed">
 use App\Http\Controllers\API\AgentController;
 use App\Http\Controllers\API\BookingController;
 use App\Http\Controllers\API\InquiryController;
 
+// Overseas Agents
 Route::get('/agents', [AgentController::class, 'index']);
 Route::post('/agents', [AgentController::class, 'store']);
 
+// Tour Bookings & Itinerary
 Route::get('/bookings', [BookingController::class, 'index']);
 Route::post('/bookings', [BookingController::class, 'store']);
 Route::put('/bookings/{id}/itinerary', [BookingController::class, 'updateItinerary']);
 
+// Client Inquiries
 Route::get('/inquiries', [InquiryController::class, 'index']);
 Route::post('/inquiries', [InquiryController::class, 'store']);
 Route::patch('/inquiries/{id}/status', [InquiryController::class, 'updateStatus']);</pre>
@@ -781,7 +910,11 @@ Route::patch('/inquiries/{id}/status', [InquiryController::class, 'updateStatus'
       </div>
     </main>
 
-    <!-- MODAL: CREATE BOOKING -->
+    <!-- ==================================================================== -->
+    <!-- 3. MODALS -->
+    <!-- ==================================================================== -->
+
+    <!-- MODAL 1: CREATE BOOKING -->
     <div v-if="showBookingModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-xl p-6 space-y-4 text-xs">
         <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -861,7 +994,7 @@ Route::patch('/inquiries/{id}/status', [InquiryController::class, 'updateStatus'
       </div>
     </div>
 
-    <!-- MODAL: REGISTER AGENT -->
+    <!-- MODAL 2: REGISTER AGENT -->
     <div v-if="showAgentModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 text-xs">
         <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -909,7 +1042,7 @@ Route::patch('/inquiries/{id}/status', [InquiryController::class, 'updateStatus'
       </div>
     </div>
 
-    <!-- MODAL: ITINERARY DETAILS -->
+    <!-- MODAL 3: ITINERARY DETAILS -->
     <div v-if="showItineraryModal && selectedBooking" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-2xl p-6 space-y-4 text-xs max-h-[85vh] flex flex-col">
         <div class="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -946,19 +1079,19 @@ Route::patch('/inquiries/{id}/status', [InquiryController::class, 'updateStatus'
       </div>
     </div>
 
-    <!-- MODAL: CONFIGURE API BASE URL -->
+    <!-- MODAL 4: CONFIGURE API BASE URL & TEST LARAVEL -->
     <div v-if="showApiConfigModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div class="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 text-xs">
         <div class="flex justify-between items-center border-b border-slate-800 pb-3">
           <h3 class="font-bold text-white text-sm flex items-center gap-2">
             <Server class="w-4 h-4 text-emerald-400" />
-            <span>Configure Backend API Target</span>
+            <span>Configure Backend Target URL</span>
           </h3>
           <button @click="showApiConfigModal = false" class="text-slate-400 hover:text-white">✕</button>
         </div>
 
         <p class="text-xs text-slate-400 leading-relaxed">
-          Point the Vue 3 SPA to your running Laravel REST API server or use the built-in mock database.
+          Point the Vue 3 frontend to your running Laravel REST API server or use the built-in mock database.
         </p>
 
         <div class="space-y-3">
@@ -967,24 +1100,25 @@ Route::patch('/inquiries/{id}/status', [InquiryController::class, 'updateStatus'
             <input
               v-model="tempApiUrl"
               placeholder="http://127.0.0.1:8000/api"
-              class="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-white font-mono text-xs"
+              class="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-white font-mono text-xs focus:border-emerald-500 outline-none"
             />
           </div>
 
+          <!-- Quick presets -->
           <div class="flex gap-2">
             <button
               type="button"
               @click="tempApiUrl = 'http://127.0.0.1:8000/api'"
-              class="flex-1 bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-2 rounded text-slate-300 text-[11px] font-mono text-center"
+              class="flex-1 bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-2 rounded text-slate-300 text-[11px] font-mono text-center transition-colors"
             >
               Laravel (127.0.0.1:8000)
             </button>
             <button
               type="button"
               @click="tempApiUrl = '/api'"
-              class="flex-1 bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-2 rounded text-slate-300 text-[11px] font-mono text-center"
+              class="flex-1 bg-slate-950 border border-slate-800 hover:border-emerald-500/50 p-2 rounded text-slate-300 text-[11px] font-mono text-center transition-colors"
             >
-              Origin Mock (/api)
+              Local Mock (/api)
             </button>
           </div>
         </div>
@@ -997,5 +1131,6 @@ Route::patch('/inquiries/{id}/status', [InquiryController::class, 'updateStatus'
         </div>
       </div>
     </div>
+
   </div>
 </template>
