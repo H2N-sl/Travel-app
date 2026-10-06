@@ -1,24 +1,66 @@
 /**
  * ==============================================================================
+ * FILE: src/services/api.ts
  * SERENDIB & METSHU DMC - COMPLETE 6-STAGE RESERVATION LIFECYCLE API SERVICE
  * ==============================================================================
  * 
- * Implements the End-to-End DMC Travel Reservation Lifecycle:
- * 1. Inquiry & Booking Intake (Lead Capture & Initial Record Creation)
- * 2. Itinerary Building & Resource Allocation (Destinations, Hotels with Meal Plans, Fleet & Guide)
- * 3. Financial Costing & Quotation Generation (Net Supplier Costs + Markup + Currencies)
- * 4. Billing, Invoicing & Payment Processing (Pro-forma Invoices, Deposit & Balance Recording)
- * 5. Booking Confirmation & Voucher Generation (Hotel Vouchers, Driver Duty Slips, QR verification)
- * 6. Automated Client Communication & Documents (Guest Welcome Letter, Legal Agreement, Post-trip Survey)
+ * 🔰 BEGINNER GUIDE - WHAT IS A REST API AND HOW DOES THIS FILE WORK?
+ * ------------------------------------------------------------------------------
+ * In modern web development, applications are split into two separate halves:
+ * 
+ * 1. THE FRONTEND (Vue 3):
+ *    - This is what the user sees in their web browser (buttons, forms, cards, colors).
+ *    - It runs on the user's computer inside Google Chrome, Safari, etc.
+ * 
+ * 2. THE BACKEND (Laravel / PHP):
+ *    - This runs on a web server or your local computer (e.g. http://127.0.0.1:8000).
+ *    - It connects to a database (like MySQL or SQLite) and stores data permanently.
+ * 
+ * 3. THE REST API (The Bridge):
+ *    - "REST API" is the standard language the Frontend uses to talk to the Backend.
+ *    - Common HTTP Methods:
+ *      * GET    -> "Please fetch data for me" (e.g. GET /api/bookings)
+ *      * POST   -> "Please save a new record" (e.g. POST /api/bookings)
+ *      * PUT    -> "Please update an existing record completely" (e.g. PUT /api/bookings/1/itinerary)
+ *      * PATCH  -> "Please update a specific field" (e.g. PATCH /api/inquiries/5/status)
+ *      * DELETE -> "Please delete a record"
+ * 
+ * 4. AXIOS:
+ *    - Axios is the JavaScript library we use below to send these HTTP requests across the network.
+ * 
+ * 5. SMART DUAL-MODE (LARAVEL + MOCK FALLBACK):
+ *    - When your Laravel backend is running at http://127.0.0.1:8000, this service
+ *      sends all requests to Laravel!
+ *    - If Laravel is NOT running (e.g. you are just testing the frontend UI or
+ *      showing a demo), it automatically falls back to an in-browser database (`localStorage`).
+ *    - This means the app NEVER crashes with a blank screen! Everything works smoothly.
+ * 
+ * ------------------------------------------------------------------------------
+ * 🛠️ HOW TO MAKE MANUAL CHANGES:
+ * - Change default API URL: see `getStoredApiBaseUrl()` around line 190.
+ * - Change default pricing / markup: see `calculateQuote()` around line 700.
+ * - Add a new field to bookings: add it to `interface Booking` below and update `NewBooking`.
  * ==============================================================================
  */
 
 import axios, { type AxiosInstance, type AxiosError } from "axios";
 
-// ------------------------------------------------------------------------------
-// DATA MODELS & ENUMS
-// ------------------------------------------------------------------------------
+// ==============================================================================
+// SECTION 1: DATA TYPES & INTERFACES (THE BLUEPRINTS)
+// ==============================================================================
+// In TypeScript, an "interface" or "type" defines the exact shape of an object.
+// Think of it as a form template: it tells the computer what fields must exist!
 
+/**
+ * LifecycleStage:
+ * Represents which of the 6 stages a booking is currently in:
+ * 1. inquiry_intake: Guest just submitted a form or inquiry.
+ * 2. itinerary_customization: Tour consultant is selecting hotels, route, vehicle.
+ * 3. quotation_billing: Costing engine calculating net rates, markup, and selling price.
+ * 4. confirmation_vouchers: Deposit received, creating vouchers and POs.
+ * 5. operations_dispatch: Chauffeur assigned, duty slip ready, guest arrives in Sri Lanka!
+ * 6. post_trip: Guest departed, sending thank-you letter and feedback review.
+ */
 export type LifecycleStage =
   | "inquiry_intake"
   | "itinerary_customization"
@@ -27,23 +69,48 @@ export type LifecycleStage =
   | "operations_dispatch"
   | "post_trip";
 
+/**
+ * PaymentStatus:
+ * - 'pending': No payment received yet.
+ * - 'deposit_paid': Partial deposit received (usually 30%).
+ * - 'fully_paid': 100% of the invoice has been settled.
+ * - 'cancelled': Tour was cancelled.
+ */
 export type PaymentStatus = "pending" | "deposit_paid" | "fully_paid" | "cancelled";
 
-export type MealPlan = "RO" | "BB" | "HB" | "FB" | "AI"; // Room Only, Bed & Breakfast, Half Board, Full Board, All Inclusive
+/**
+ * MealPlan:
+ * Standard international hospitality meal plan codes:
+ * - RO: Room Only (no meals included)
+ * - BB: Bed & Breakfast (only morning breakfast included)
+ * - HB: Half Board (breakfast + dinner included - most popular for Sri Lanka tours)
+ * - FB: Full Board (breakfast + lunch + dinner included)
+ * - AI: All Inclusive (all meals + drinks included)
+ */
+export type MealPlan = "RO" | "BB" | "HB" | "FB" | "AI";
 
+/**
+ * Agent:
+ * Represents an overseas wholesale tour agency (e.g. from the UK, Germany, Australia)
+ * who partners with Serendib / Metshu Travels to send clients.
+ */
 export interface Agent {
-  id: number;
-  code: string;
-  name: string;
-  country: string;
-  contact_person: string;
-  email: string;
-  phone: string;
-  current_seq: number;
-  created_at?: string;
-  updated_at?: string;
+  id: number;               // Unique database ID
+  code: string;             // 3-letter uppercase code, e.g. "ABC" or "KUO"
+  name: string;             // Company name, e.g. "ABC Travel UK Ltd"
+  country: string;          // Country of the agency
+  contact_person: string;   // Name of primary contact agent
+  email: string;            // Agent email address
+  phone: string;            // Agent phone or WhatsApp
+  current_seq: number;      // Sequence number used to generate unique booking codes (e.g. ABC-2026-0001)
+  created_at?: string;      // Timestamp when registered
+  updated_at?: string;      // Timestamp when updated
 }
 
+/**
+ * NewAgent:
+ * The data required when registering a brand-new overseas agent.
+ */
 export interface NewAgent {
   code: string;
   name: string;
@@ -53,82 +120,104 @@ export interface NewAgent {
   phone: string;
 }
 
+/**
+ * ItineraryDay:
+ * Represents one single day in a tourist's schedule.
+ * Example: Day 2 -> Sigiriya -> Heritance Kandalama Hotel -> HB -> Lion Rock Climb.
+ */
 export interface ItineraryDay {
-  id?: number;
-  booking_id?: number;
-  day_number: number;
-  date: string;
-  destination: string;
-  hotel_name: string;
-  room_category?: string;
-  meal_plan?: MealPlan;
-  meals: string;
-  activities: string;
-  transport: string;
-  notes?: string;
+  id?: number;              // Database ID
+  booking_id?: number;      // Which booking this day belongs to
+  day_number: number;       // Day 1, Day 2, Day 3, etc.
+  date: string;             // Date in YYYY-MM-DD format
+  destination: string;      // City / Location (e.g. "Kandy", "Ella", "Yala")
+  hotel_name: string;       // Name of the booked hotel
+  room_category?: string;   // e.g. "Deluxe Sea View", "Standard", "Junior Suite"
+  meal_plan?: MealPlan;     // "RO" | "BB" | "HB" | "FB" | "AI"
+  meals: string;            // Human-readable summary, e.g. "Breakfast & Dinner included"
+  activities: string;       // Highlights, e.g. "Temple of the Tooth Relic, Botanical Gardens"
+  transport: string;        // Vehicle used, e.g. "Luxury AC Van (Toyota KDH)"
+  notes?: string;           // Special internal notes for guide or driver
 }
 
+/**
+ * PaymentRecord:
+ * Tracks every financial transaction made towards a booking (deposit, balance, or full).
+ */
 export interface PaymentRecord {
-  id: string;
-  booking_id: number;
-  amount: number;
-  currency: "LKR" | "USD" | "EUR" | "GBP";
-  type: "deposit" | "balance" | "full";
-  method: "stripe" | "payhere" | "bank_transfer";
-  reference: string;
-  date: string;
-  notes?: string;
+  id: string;               // Unique receipt ID, e.g. "PAY-101"
+  booking_id: number;       // Associated booking ID
+  amount: number;           // Amount paid
+  currency: "LKR" | "USD" | "EUR" | "GBP"; // Currency code
+  type: "deposit" | "balance" | "full";    // Payment stage
+  method: "stripe" | "payhere" | "bank_transfer"; // Gateway or bank transfer
+  reference: string;        // Transaction ID or bank transfer SWIFT code
+  date: string;             // Date received
+  notes?: string;           // Optional remarks
 }
 
+/**
+ * ServiceVoucher:
+ * Legal document handed to service providers (Hotels, Chauffeurs, Safari Jeeps)
+ * guaranteeing payment by the DMC.
+ */
 export interface ServiceVoucher {
-  id: string;
+  id: string;               // Unique voucher ID
   type: "hotel_checkin" | "transport_duty_slip" | "safari_pass";
-  title: string;
-  supplier_name: string;
-  booking_number: string;
-  guest_name: string;
-  valid_date: string;
-  service_details: string;
-  room_or_vehicle: string;
-  meal_plan?: string;
-  verification_token: string;
-  qr_data: string;
+  title: string;            // Document title, e.g. "Hotel Check-in Voucher"
+  supplier_name: string;    // Name of hotel or safari operator
+  booking_number: string;   // Booking code (e.g. "ABC-2026-0001")
+  guest_name: string;       // Guest primary name
+  valid_date: string;       // Check-in date or service date
+  service_details: string;  // Included services (number of pax, meals, etc.)
+  room_or_vehicle: string;  // Room type or vehicle plate
+  meal_plan?: string;       // Meal plan code
+  verification_token: string; // Anti-fraud verification code
+  qr_data: string;          // Data encoded into QR code for mobile scanning
 }
 
+/**
+ * Booking:
+ * The MASTER reservation document holding all information about a tour booking.
+ */
 export interface Booking {
   id: number;
-  booking_number: string;
-  agent_id: number;
-  guest_name: string;
-  nationality: string;
-  pax_adults: number;
-  pax_children: number;
-  pax_infants?: number;
-  arrival_date: string;
-  departure_date: string;
-  arrival_flight: string;
-  departure_flight: string;
-  transport_type: string;
-  driver_guide: string;
-  driver_phone?: string;
-  driver_language?: string;
-  status: string; // "In Operation", "Confirmed", "Completed", "Cancelled"
-  lifecycle_stage: LifecycleStage;
-  payment_status: PaymentStatus;
-  special_requests?: string | null;
-  revenue_lkr: number;
-  revenue_usd?: number;
-  markup_percentage?: number;
-  expenses_hotels?: number;
-  expenses_transport?: number;
-  expenses_guide?: number;
-  expenses_activities?: number;
-  expenses_other?: number;
-  payments: PaymentRecord[];
-  agent?: Agent;
-  itinerary_days?: ItineraryDay[];
+  booking_number: string;     // Unique identifier formatted as {AGENT_CODE}-{YEAR}-{SEQUENCE}
+  agent_id: number;           // Foreign key connecting to the Agent
+  guest_name: string;         // Primary guest / party name
+  nationality: string;        // Guest nationality
+  pax_adults: number;         // Count of adult passengers
+  pax_children: number;       // Count of children passengers
+  pax_infants?: number;       // Count of infant passengers
+  arrival_date: string;       // Date of arrival at CMB Airport
+  departure_date: string;     // Date of departure from CMB Airport
+  arrival_flight: string;     // Flight number and time (e.g. "UL504 @ 12:40 PM")
+  departure_flight: string;   // Flight number and time (e.g. "UL503 @ 02:15 PM")
+  transport_type: string;     // Allocated vehicle class (e.g. "Luxury AC Van")
+  driver_guide: string;       // Assigned certified chauffeur guide
+  driver_phone?: string;      // Chauffeur direct mobile / WhatsApp
+  driver_language?: string;   // Languages spoken by guide (English, German, French)
+  status: string;             // "In Operation", "Confirmed", "Completed", "Cancelled"
+  lifecycle_stage: LifecycleStage; // Which of the 6 stages this booking is currently in
+  payment_status: PaymentStatus;   // "pending", "deposit_paid", "fully_paid"
+  special_requests?: string | null;// Dietary, honeymoon, wheelchair requests
+  revenue_lkr: number;        // Gross selling price in Sri Lankan Rupees (LKR)
+  revenue_usd?: number;       // Approximate price in US Dollars (USD)
+  markup_percentage?: number; // Profit margin percentage applied (e.g. 25%)
+  expenses_hotels?: number;   // Net supplier cost for accommodations
+  expenses_transport?: number;// Net supplier cost for vehicle & fuel
+  expenses_guide?: number;    // Chauffeur guide fee & allowances
+  expenses_activities?: number;// Entrance tickets & safari costs
+  expenses_other?: number;    // Miscellaneous contingency expenses
+  payments: PaymentRecord[];  // List of recorded payments
+  agent?: Agent;              // Nested agent object
+  itinerary_days?: ItineraryDay[]; // Nested day-by-day itinerary
 }
 
+/**
+ * NewBooking:
+ * The data required from the form when creating a new tour reservation.
+ */
 export interface NewBooking {
   agent_id: number | string;
   guest_name: string;
@@ -146,6 +235,10 @@ export interface NewBooking {
   special_requests?: string;
 }
 
+/**
+ * Inquiry:
+ * Represents a customer lead submitted from the public website contact form.
+ */
 export interface Inquiry {
   id: number;
   full_name: string;
@@ -161,6 +254,10 @@ export interface Inquiry {
   created_at?: string;
 }
 
+/**
+ * NewInquiry:
+ * Form data submitted from the public website.
+ */
 export interface NewInquiry {
   full_name: string;
   email: string;
@@ -173,12 +270,20 @@ export interface NewInquiry {
   message: string;
 }
 
-// ------------------------------------------------------------------------------
-// BASE URL RESOLUTION
-// ------------------------------------------------------------------------------
+// ==============================================================================
+// SECTION 2: API BASE URL & AXIOS HTTP INSTANCE
+// ==============================================================================
 
+// Key used to store custom backend URL in browser's localStorage
 const STORAGE_API_KEY = "serendib_api_base_url";
 
+/**
+ * getStoredApiBaseUrl():
+ * Finds the API URL to connect to.
+ * 1. First checks if user typed a custom URL in the UI (saved in localStorage).
+ * 2. If not, checks Vite's environment variable `VITE_API_BASE_URL`.
+ * 3. Defaults to "/api" (which proxies to local server or dev server).
+ */
 export function getStoredApiBaseUrl(): string {
   if (typeof window !== "undefined") {
     const saved = localStorage.getItem(STORAGE_API_KEY);
@@ -187,6 +292,11 @@ export function getStoredApiBaseUrl(): string {
   return import.meta.env.VITE_API_BASE_URL || "/api";
 }
 
+/**
+ * setStoredApiBaseUrl(url):
+ * Allows the user or developer to change the API URL live in the browser.
+ * For example: change from "/api" to "http://127.0.0.1:8000/api".
+ */
 export function setStoredApiBaseUrl(url: string): void {
   const cleanUrl = url.trim();
   if (typeof window !== "undefined") {
@@ -195,6 +305,12 @@ export function setStoredApiBaseUrl(url: string): void {
   api.defaults.baseURL = cleanUrl;
 }
 
+/**
+ * api (Axios Instance):
+ * The configured HTTP client that sends network requests.
+ * - timeout: 6000ms (6 seconds) before aborting if server is unresponsive.
+ * - headers: Requests and expects JSON data format.
+ */
 export const api: AxiosInstance = axios.create({
   baseURL: getStoredApiBaseUrl(),
   timeout: 6000,
@@ -204,9 +320,14 @@ export const api: AxiosInstance = axios.create({
   },
 });
 
-// ------------------------------------------------------------------------------
-// IN-BROWSER PERSISTENT MOCK STORE FOR ALL 6 LIFECYCLE STAGES
-// ------------------------------------------------------------------------------
+// ==============================================================================
+// SECTION 3: IN-BROWSER PERSISTENT MOCK STORE (FALLBACK DATABASE)
+// ==============================================================================
+// WHY DOES THIS EXIST?
+// When building or testing the Vue 3 frontend before your Laravel backend is
+// started or deployed, we don't want the frontend to display red error banners.
+// Instead, we store sample agents, bookings, and inquiries in localStorage!
+// If your Laravel backend goes live, the code below automatically connects to it.
 
 const MOCK_STORAGE_KEY = "serendib_metshu_lifecycle_store_v2";
 
@@ -216,7 +337,13 @@ interface MockStore {
   inquiries: Inquiry[];
 }
 
+/**
+ * getInitialMockStore():
+ * Creates rich, realistic initial sample data for Sri Lanka travel tours.
+ * Includes a registered UK agent, an active 7-day luxury circuit, and an incoming lead.
+ */
 function getInitialMockStore(): MockStore {
+  // 1. Sample Overseas Wholesale Agent:
   const defaultAgent: Agent = {
     id: 1,
     code: "ABC",
@@ -229,6 +356,7 @@ function getInitialMockStore(): MockStore {
     created_at: "2026-10-01T08:00:00.000Z",
   };
 
+  // 2. Sample Active Tour Booking (7-Day Island Discovery):
   const defaultBooking: Booking = {
     id: 1,
     booking_number: "ABC-2026-0001",
@@ -247,7 +375,7 @@ function getInitialMockStore(): MockStore {
     driver_phone: "+94 77 123 4567",
     driver_language: "English, German",
     status: "In Operation",
-    lifecycle_stage: "operations_dispatch",
+    lifecycle_stage: "operations_dispatch", // Stage 5: In Operation & Dispatched
     payment_status: "fully_paid",
     special_requests: "Honeymoon arrangement, vegetarian meal.",
     revenue_lkr: 2850000,
@@ -268,7 +396,7 @@ function getInitialMockStore(): MockStore {
         method: "stripe",
         reference: "ch_3N8912831",
         date: "2026-09-15",
-        notes: "30% Initial Deposit Paid",
+        notes: "30% Initial Deposit Paid via Stripe",
       },
       {
         id: "PAY-102",
@@ -279,7 +407,7 @@ function getInitialMockStore(): MockStore {
         method: "bank_transfer",
         reference: "SWIFT-UK-90218",
         date: "2026-10-01",
-        notes: "70% Balance settlement confirmed",
+        notes: "70% Balance settlement confirmed via Bank Wire",
       },
     ],
     agent: defaultAgent,
@@ -296,7 +424,7 @@ function getInitialMockStore(): MockStore {
         meals: "Dinner included",
         activities: "Airport VIP greeting, Colombo City Tour & Welcome Pack presentation",
         transport: "Luxury AC Van (Toyota KDH)",
-        notes: "Welcome garland and cold towels",
+        notes: "Welcome garland and cold towels ready upon arrival",
       },
       {
         id: 2,
@@ -385,6 +513,7 @@ function getInitialMockStore(): MockStore {
     ],
   };
 
+  // 3. Sample Incoming Customer Inquiry:
   const defaultInquiry: Inquiry = {
     id: 1,
     full_name: "Eleanor Vance",
@@ -407,13 +536,18 @@ function getInitialMockStore(): MockStore {
   };
 }
 
+/**
+ * loadMockStore():
+ * Reads the mock database from the browser's localStorage.
+ * If none exists, creates the initial sample data and saves it.
+ */
 function loadMockStore(): MockStore {
   if (typeof window !== "undefined") {
     try {
       const data = localStorage.getItem(MOCK_STORAGE_KEY);
       if (data) return JSON.parse(data);
     } catch {
-      // ignore
+      // If parsing fails, fall back to initial data
     }
   }
   const init = getInitialMockStore();
@@ -421,25 +555,41 @@ function loadMockStore(): MockStore {
   return init;
 }
 
+/**
+ * saveMockStore(store):
+ * Writes the updated data into the browser's localStorage.
+ */
 function saveMockStore(store: MockStore): void {
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(MOCK_STORAGE_KEY, JSON.stringify(store));
     } catch {
-      // ignore
+      // Ignore storage quota errors in private browsing modes
     }
   }
 }
 
-// ------------------------------------------------------------------------------
-// COMPLETE LIFECYCLE SERVICE & REST API CLIENT
-// ------------------------------------------------------------------------------
+// ==============================================================================
+// SECTION 4: COMPLETE LIFECYCLE SERVICE & REST API CLIENT (apiClient)
+// ==============================================================================
+// Below is the main object exported to Vue components (`PublicWebsite.vue` and
+// `OperationsPortal.vue`).
+// Every method uses a "Try Laravel First, Fallback to Mock if Offline" pattern:
+// 1. `try { await api.get(...) }` -> attempts real network call to Laravel.
+// 2. `catch { ... }` -> if Laravel is offline or returns error, runs local mock logic.
 
 export const apiClient = {
-  // Connection tester
+
+  /**
+   * checkConnection():
+   * Tests whether the Laravel REST API backend is reachable.
+   * Sends a quick test request to `/agents`.
+   * Returns: { isOnline: true/false, message: string, url: string }
+   */
   async checkConnection(): Promise<{ isOnline: boolean; message: string; url: string }> {
     const targetUrl = getStoredApiBaseUrl();
     try {
+      // Send a quick ping to the Laravel backend (3 second timeout)
       await api.get("/agents", { timeout: 3000 });
       return {
         isOnline: true,
@@ -456,35 +606,56 @@ export const apiClient = {
     }
   },
 
+  // ----------------------------------------------------------------------------
   // STAGE 1: INQUIRIES & LEAD CAPTURE
+  // ----------------------------------------------------------------------------
+
+  /**
+   * getInquiries():
+   * Fetches all inquiries submitted through the website contact form.
+   * Endpoint: GET /api/inquiries
+   */
   async getInquiries(): Promise<{ data: Inquiry[]; source: "laravel" | "mock" }> {
     try {
       const res = await api.get<Inquiry[]>("/inquiries");
       return { data: res.data, source: "laravel" };
     } catch {
+      // Mock Fallback: Read inquiries from browser localStorage
       const store = loadMockStore();
       return { data: store.inquiries, source: "mock" };
     }
   },
 
+  /**
+   * createInquiry(payload):
+   * Saves a new inquiry when a tourist submits the website contact form.
+   * Endpoint: POST /api/inquiries
+   */
   async createInquiry(payload: NewInquiry): Promise<{ data: Inquiry; source: "laravel" | "mock" }> {
     try {
       const res = await api.post<Inquiry>("/inquiries", payload);
       return { data: res.data, source: "laravel" };
     } catch {
+      // Mock Fallback: Generate a unique ID and save to browser localStorage
       const store = loadMockStore();
       const newInquiry: Inquiry = {
-        id: Date.now(),
+        id: Date.now(), // Use current millisecond timestamp as unique ID
         ...payload,
         status: "New",
         created_at: new Date().toISOString(),
       };
+      // Insert at beginning of array so newest shows first
       store.inquiries.unshift(newInquiry);
       saveMockStore(store);
       return { data: newInquiry, source: "mock" };
     }
   },
 
+  /**
+   * updateInquiryStatus(id, status):
+   * Updates an inquiry's status to 'New', 'Contacted', or 'Closed'.
+   * Endpoint: PATCH /api/inquiries/{id}/status
+   */
   async updateInquiryStatus(
     id: number,
     status: Inquiry["status"],
@@ -493,6 +664,7 @@ export const apiClient = {
       const res = await api.patch<Inquiry>(`/inquiries/${id}/status`, { status });
       return { data: res.data, source: "laravel" };
     } catch {
+      // Mock Fallback: Find by ID and update status
       const store = loadMockStore();
       const inq = store.inquiries.find((i) => i.id === id);
       if (!inq) throw new Error("Inquiry not found");
@@ -502,7 +674,15 @@ export const apiClient = {
     }
   },
 
-  // STAGE 1 & OVERSEAS AGENTS
+  // ----------------------------------------------------------------------------
+  // STAGE 1 (B): OVERSEAS AGENT DIRECTORY
+  // ----------------------------------------------------------------------------
+
+  /**
+   * getAgents():
+   * Fetches all registered overseas wholesale tour operators.
+   * Endpoint: GET /api/agents
+   */
   async getAgents(): Promise<{ data: Agent[]; source: "laravel" | "mock" }> {
     try {
       const res = await api.get<Agent[]>("/agents");
@@ -513,6 +693,11 @@ export const apiClient = {
     }
   },
 
+  /**
+   * createAgent(payload):
+   * Registers a new overseas agent (e.g. from UK, Germany, USA).
+   * Endpoint: POST /api/agents
+   */
   async createAgent(payload: NewAgent): Promise<{ data: Agent; source: "laravel" | "mock" }> {
     try {
       const res = await api.post<Agent>("/agents", payload);
@@ -536,7 +721,15 @@ export const apiClient = {
     }
   },
 
-  // STAGE 1: BOOKING CREATION
+  // ----------------------------------------------------------------------------
+  // STAGE 1 (C): TOUR BOOKING CREATION
+  // ----------------------------------------------------------------------------
+
+  /**
+   * getBookings():
+   * Fetches all bookings with their nested agent and itinerary days.
+   * Endpoint: GET /api/bookings
+   */
   async getBookings(): Promise<{ data: Booking[]; source: "laravel" | "mock" }> {
     try {
       const res = await api.get<Booking[]>("/bookings");
@@ -547,6 +740,12 @@ export const apiClient = {
     }
   },
 
+  /**
+   * createBooking(payload):
+   * Creates a new booking record, generates unique booking number,
+   * calculates estimated supplier expenses, and attaches Day 1 itinerary.
+   * Endpoint: POST /api/bookings
+   */
   async createBooking(payload: NewBooking): Promise<{ data: Booking; source: "laravel" | "mock" }> {
     try {
       const res = await api.post<Booking>("/bookings", payload);
@@ -555,14 +754,19 @@ export const apiClient = {
       const store = loadMockStore();
       const agentIdNum = Number(payload.agent_id);
       const agent = store.agents.find((a) => a.id === agentIdNum);
+
+      // Increment agent sequence counter (e.g. 1 -> 2)
       const nextSeq = (agent?.current_seq ?? 0) + 1;
       if (agent) {
         agent.current_seq = nextSeq;
       }
+
+      // Generate booking number format: {AGENT_CODE}-{YEAR}-{0001}
       const agentCode = agent?.code || "SRN";
       const bookingNumber = `${agentCode}-${new Date().getFullYear()}-${String(nextSeq).padStart(4, "0")}`;
       const rev = Number(payload.revenue_lkr) || 0;
 
+      // Construct booking record
       const newBooking: Booking = {
         id: Date.now(),
         booking_number: bookingNumber,
@@ -582,17 +786,17 @@ export const apiClient = {
         driver_phone: "+94 77 123 4567",
         driver_language: "English",
         status: "In Operation",
-        lifecycle_stage: "itinerary_customization",
+        lifecycle_stage: "itinerary_customization", // Moves to Stage 2 automatically
         payment_status: "pending",
         special_requests: payload.special_requests || null,
         revenue_lkr: rev,
-        revenue_usd: Math.round(rev / 300),
+        revenue_usd: Math.round(rev / 300), // Approximate 1 USD = 300 LKR
         markup_percentage: 25,
-        expenses_hotels: Math.round(rev * 0.45),
-        expenses_transport: Math.round(rev * 0.15),
-        expenses_guide: Math.round(rev * 0.05),
-        expenses_activities: Math.round(rev * 0.08),
-        expenses_other: Math.round(rev * 0.02),
+        expenses_hotels: Math.round(rev * 0.45),     // Standard DMC baseline: ~45% hotels
+        expenses_transport: Math.round(rev * 0.15),  // Standard DMC baseline: ~15% transport
+        expenses_guide: Math.round(rev * 0.05),      // Standard DMC baseline: ~5% guide fee
+        expenses_activities: Math.round(rev * 0.08), // Standard DMC baseline: ~8% admissions
+        expenses_other: Math.round(rev * 0.02),      // Standard DMC baseline: ~2% incidentals
         payments: [],
         itinerary_days: [
           {
@@ -609,13 +813,23 @@ export const apiClient = {
           },
         ],
       };
+
       store.bookings.unshift(newBooking);
       saveMockStore(store);
       return { data: newBooking, source: "mock" };
     }
   },
 
+  // ----------------------------------------------------------------------------
   // STAGE 2: ITINERARY BUILDING & RESOURCE ALLOCATION
+  // ----------------------------------------------------------------------------
+
+  /**
+   * updateItinerary(bookingId, days):
+   * Saves custom day-by-day itinerary sequence with destinations, hotels,
+   * room categories, and meal plans (RO, BB, HB, FB).
+   * Endpoint: PUT /api/bookings/{id}/itinerary
+   */
   async updateItinerary(
     bookingId: number,
     days: ItineraryDay[],
@@ -627,17 +841,23 @@ export const apiClient = {
       const store = loadMockStore();
       const booking = store.bookings.find((b) => b.id === bookingId);
       if (!booking) throw new Error("Booking not found");
+
+      // Renumber days in sequence 1, 2, 3...
       booking.itinerary_days = days.map((d, i) => ({
         ...d,
         day_number: i + 1,
       }));
-      booking.lifecycle_stage = "quotation_billing";
+      booking.lifecycle_stage = "quotation_billing"; // Advance to Stage 3
       saveMockStore(store);
       return { data: booking, source: "mock" };
     }
   },
 
-  // STAGE 2: FLEET & CHAUFFEUR GUIDE ALLOCATION
+  /**
+   * updateAllocations(bookingId, allocations):
+   * Allocates fleet class (Van, Sedan, Coach) and certified chauffeur guide.
+   * Endpoint: PUT /api/bookings/{id}/allocations
+   */
   async updateAllocations(
     bookingId: number,
     allocations: {
@@ -663,7 +883,17 @@ export const apiClient = {
     }
   },
 
+  // ----------------------------------------------------------------------------
   // STAGE 3: FINANCIAL COSTING & QUOTATION ENGINE
+  // ----------------------------------------------------------------------------
+
+  /**
+   * calculateQuote(bookingId, params):
+   * Calculates supplier net rates (hotel nights, daily transport, guide fees,
+   * safari/activity tickets), applies the DMC markup margin (e.g. 20% - 30%),
+   * and computes selling prices in LKR and target currency.
+   * Endpoint: POST /api/bookings/{id}/calculate-quote
+   */
   async calculateQuote(
     bookingId: number,
     params: {
@@ -694,17 +924,21 @@ export const apiClient = {
       if (!booking) throw new Error("Booking not found");
 
       const daysCount = booking.itinerary_days?.length || 7;
-      const net_hotels = daysCount * 140000;
-      const net_transport = daysCount * 45000;
-      const net_guide = daysCount * 18000;
-      const net_activities = daysCount * 25000;
+
+      // Real-world Sri Lanka DMC baseline rates per day:
+      const net_hotels = daysCount * 140000;    // ~LKR 140,000 per night (4-star luxury room)
+      const net_transport = daysCount * 45000;  // ~LKR 45,000 per day (Fuel + AC Van rental)
+      const net_guide = daysCount * 18000;      // ~LKR 18,000 per day (Chauffeur daily allowance)
+      const net_activities = daysCount * 25000; // ~LKR 25,000 per day (Sigiriya, Yala tickets)
       const net_total = net_hotels + net_transport + net_guide + net_activities;
 
+      // Apply DMC markup margin:
       const markup = params.markup_percentage || 25;
       const markup_amount = Math.round(net_total * (markup / 100));
       const gross_total_lkr = net_total + markup_amount;
       const gross_total_usd = Math.round(gross_total_lkr / 300);
 
+      // Save calculated financials to booking:
       booking.revenue_lkr = gross_total_lkr;
       booking.revenue_usd = gross_total_usd;
       booking.markup_percentage = markup;
@@ -727,14 +961,23 @@ export const apiClient = {
           markup_amount,
           gross_total_lkr,
           gross_total_usd,
-          deposit_required: Math.round(gross_total_lkr * 0.3),
+          deposit_required: Math.round(gross_total_lkr * 0.3), // 30% standard deposit
         },
         source: "mock",
       };
     }
   },
 
+  // ----------------------------------------------------------------------------
   // STAGE 4: INVOICING & PAYMENT PROCESSING
+  // ----------------------------------------------------------------------------
+
+  /**
+   * recordPayment(bookingId, payment):
+   * Logs a deposit or balance payment received via Stripe, PayHere, or Bank SWIFT.
+   * When 100% is paid, automatically advances booking to Stage 5 (Confirmation & Vouchers).
+   * Endpoint: POST /api/bookings/{id}/payments
+   */
   async recordPayment(
     bookingId: number,
     payment: {
@@ -769,6 +1012,7 @@ export const apiClient = {
       if (!booking.payments) booking.payments = [];
       booking.payments.push(newRecord);
 
+      // Check total paid against gross revenue:
       const totalPaid = booking.payments.reduce((sum, p) => sum + p.amount, 0);
       if (totalPaid >= booking.revenue_lkr * 0.98) {
         booking.payment_status = "fully_paid";
@@ -783,7 +1027,16 @@ export const apiClient = {
     }
   },
 
+  // ----------------------------------------------------------------------------
   // STAGE 5: SERVICE VOUCHERS GENERATION
+  // ----------------------------------------------------------------------------
+
+  /**
+   * getVouchers(bookingId):
+   * Generates printable Hotel Check-in Vouchers and Chauffeur Duty Slips
+   * equipped with anti-fraud verification tokens and QR code links.
+   * Endpoint: GET /api/bookings/{id}/vouchers
+   */
   async getVouchers(
     bookingId: number,
   ): Promise<{ data: ServiceVoucher[]; source: "laravel" | "mock" }> {
@@ -797,7 +1050,7 @@ export const apiClient = {
 
       const vouchers: ServiceVoucher[] = [];
 
-      // 1. Hotel check-in vouchers
+      // 1. Hotel check-in vouchers (one for each distinct hotel stay)
       const days = booking.itinerary_days || [];
       const distinctHotels = new Map<string, ItineraryDay>();
       days.forEach((day) => {
@@ -824,7 +1077,7 @@ export const apiClient = {
         });
       });
 
-      // 2. Transport Duty Slip
+      // 2. Chauffeur Guide Duty Slip
       const transportToken = `TRANS-${booking.booking_number}-DUTY`;
       vouchers.push({
         id: "TRP-1",
@@ -844,7 +1097,19 @@ export const apiClient = {
     }
   },
 
-  // STAGE 6: AUTOMATED CLIENT DOCUMENTS (Welcome Letter, Agreement, Thank You)
+  // ----------------------------------------------------------------------------
+  // STAGE 6: AUTOMATED CLIENT DOCUMENTS (Welcome Letter, Agreement, Survey)
+  // ----------------------------------------------------------------------------
+
+  /**
+   * getDocument(bookingId, type):
+   * Generates formal HTML documents:
+   * - 'welcome_letter': Official arrival instructions, emergency hotline, driver phone.
+   * - 'travel_agreement': Contract terms, payment schedule, cancellation clauses.
+   * - 'thank_you_survey': Post-trip feedback questionnaire link.
+   * - 'quotation': Formal quotation proposal breakdown.
+   * Endpoint: GET /api/bookings/{id}/documents/{type}
+   */
   async getDocument(
     bookingId: number,
     type: "quotation" | "welcome_letter" | "travel_agreement" | "thank_you_survey",
@@ -957,7 +1222,17 @@ export const apiClient = {
     }
   },
 
-  // STAGE ADVANCEMENT
+  // ----------------------------------------------------------------------------
+  // LIFECYCLE STAGE ADVANCEMENT
+  // ----------------------------------------------------------------------------
+
+  /**
+   * updateLifecycleStage(bookingId, stage):
+   * Advances or moves the booking between the 6 stages:
+   * 'inquiry_intake' -> 'itinerary_customization' -> 'quotation_billing' ->
+   * 'confirmation_vouchers' -> 'operations_dispatch' -> 'post_trip'
+   * Endpoint: PUT /api/bookings/{id}/stage
+   */
   async updateLifecycleStage(
     bookingId: number,
     stage: LifecycleStage,

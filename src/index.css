@@ -1,12 +1,48 @@
+/**
+ * ==============================================================================
+ * FILE: src/index.css (GLOBAL STYLESHEET & PRINT RULES)
+ * ==============================================================================
+ * 
+ * 🔰 BEGINNER GUIDE - WHAT DOES THIS FILE DO?
+ * ------------------------------------------------------------------------------
+ * This file sets up global styles across the entire application using Tailwind CSS.
+ * 
+ * 1. `@tailwind base;` -> Resets default browser styles (margins, default fonts, etc.)
+ *    so every browser (Chrome, Safari, Firefox, Edge) renders the page consistently.
+ * 
+ * 2. `@tailwind components;` -> Pre-bundles reusable component classes.
+ * 
+ * 3. `@tailwind utilities;` -> Generates utility classes like `text-white`, `bg-slate-900`,
+ *    `p-4` (padding), `rounded-lg`, etc., which you see directly inside `.vue` files!
+ * 
+ * 4. `@media print` -> Special rules that activate ONLY when a user clicks "Print"
+ *    or presses `Ctrl + P` / `Cmd + P` to print a Voucher, Invoice, or Welcome Letter:
+ *    - It hides web headers, sidebars, and buttons so you don't waste ink.
+ *    - It makes background white and text dark for crisp, clean physical paper prints.
+ * 
+ * ------------------------------------------------------------------------------
+ * 🛠️ HOW TO MAKE MANUAL CHANGES:
+ * - If you want custom CSS rules that Tailwind doesn't have, you can write normal
+ *   CSS rules at the bottom of this file.
+ * ==============================================================================
+ */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* 
+ * PRINT RULES:
+ * When staff print out a Hotel Voucher, Driver Duty Slip, or Guest Agreement,
+ * these rules ensure only the paper document is printed, not the website navigation buttons!
+ */
 @media print {
   body {
     background-color: white !important;
     color: black !important;
   }
+  
+  /* Hide navigation, buttons, and headers on physical paper printouts */
   aside, header, nav, button {
     display: none !important;
   }

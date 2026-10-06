@@ -4,23 +4,25 @@
  * METSHU TRAVELS - PUBLIC WEBSITE FRONTEND (metshutravels.com design & features)
  * ==============================================================================
  * 
- * Features:
- * - Brand: Metshu Travels (Sri Lanka)
- * - Office: L 12, Ceylinco House, Colombo 01, Sri Lanka
- * - Direct Contact: +94 74 394 2844 | info@metshutravels.com
- * - Hero with quick package search & filter
- * - Complete 5N/6D, 9N/10D, 14N/15D, 7N/8D tour packages with day-by-day modal
- * - Day excursions and signature experiences
- * - Luxury vehicle fleet & chauffeur guide showcase
- * - Why Choose Metshu Travels & sustainable tourism standards
- * - Customer testimonials & ratings
- * - Custom tour builder & inquiry form (directly connected to /api/inquiries REST API)
- * - Navigation button to switch to the DMC Operations System
+ * 🔰 FEATURES & ARCHITECTURE INTEGRATION:
+ * 1. WHITELABEL BRANDING: Consumes `useCompany()` to dynamically display company name,
+ *    tagline, contact numbers, email, physical office address, and SLTDA license.
+ * 2. DYNAMIC ASSET IMAGES: Consumes `useImages()` with automatic fallback handling
+ *    (@error="handleImageError($event, ...)") for hero, tours, excursions, fleet, and gallery.
+ * 3. DUAL-THEME SUPPORT: Supports both Light & Dark modes smoothly via Tailwind classes
+ *    and includes the `<ThemeToggle />` component in the announcement bar and header.
+ * 4. 6-STAGE DMC CONNECTION: Direct button to switch to the Operations Portal and
+ *    inquiry form directly hooked to the REST API (`apiClient.createInquiry`).
  * ==============================================================================
  */
 
 import { ref, computed } from 'vue';
 import { apiClient, type NewInquiry } from '../services/api';
+import { useCompany } from '../composables/useCompany';
+import { useImages } from '../composables/useImages';
+import { useTheme } from '../composables/useTheme';
+import ThemeToggle from './ThemeToggle.vue';
+
 import {
   Compass,
   MapPin,
@@ -43,10 +45,18 @@ import {
   Award,
   Search,
   X,
-  MessageCircle
+  MessageCircle,
+  ExternalLink
 } from 'lucide-vue-next';
 
-// Emit event to switch to DMC Operations System
+// ------------------------------------------------------------------------------
+// 1. COMPOSABLES INTEGRATION
+// ------------------------------------------------------------------------------
+const { company } = useCompany();
+const { images, handleImageError } = useImages();
+const { isDark } = useTheme();
+
+// Emit event to switch to DMC Operations System in parent App.vue
 const emit = defineEmits<{
   (e: 'open-operations'): void;
 }>();
@@ -78,8 +88,7 @@ const inquiryForm = ref<NewInquiry>({
 });
 
 // ------------------------------------------------------------------------------
-// METSHU TRAVELS TOUR PACKAGES DATA
-// (Directly modeled from metshutravels.com offerings)
+// 2. TOUR PACKAGES DATA (Connected to dynamic image paths)
 // ------------------------------------------------------------------------------
 
 export interface TourPackage {
@@ -93,6 +102,7 @@ export interface TourPackage {
   priceLKR: string;
   priceUSD: string;
   image: string;
+  fallbackImage: string;
   route: string;
   highlights: string[];
   inclusions: string[];
@@ -106,7 +116,7 @@ export interface TourPackage {
   }[];
 }
 
-const TOUR_PACKAGES: TourPackage[] = [
+const TOUR_PACKAGES = computed<TourPackage[]>(() => [
   {
     id: '5n-6d-classic',
     duration: '5 Nights / 6 Days',
@@ -117,7 +127,8 @@ const TOUR_PACKAGES: TourPackage[] = [
     subtitle: 'Classic circuit through Kandy, the misty hill country, Yala wildlife and southern ocean shores.',
     priceLKR: 'from LKR 380,000 / person',
     priceUSD: 'from $1,250 USD / person',
-    image: 'https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&w=1200&q=85',
+    image: images.tours.miniature.src,
+    fallbackImage: images.tours.miniature.fallback,
     route: 'Negombo · Kandy · Ella · Yala Safari · Mirissa · Colombo',
     highlights: [
       'Peradeniya Royal Botanical Gardens',
@@ -140,7 +151,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Warm Welcome to the Wonder of Asia',
         hotel: 'Jetwing Blue or similar (Negombo)',
         meals: 'Dinner included',
-        description: 'Airport greeting by your dedicated Metshu Travels chauffeur-guide. Transfer to your coastal beach hotel to unwind after your flight.'
+        description: 'Airport greeting by your dedicated chauffeur-guide. Transfer to your coastal beach hotel to unwind after your flight.'
       },
       {
         day: 2,
@@ -180,7 +191,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Scenic Return & Departure Transfer',
         hotel: 'Departure',
         meals: 'Breakfast',
-        description: 'Morning coastal leisure, optional turtle hatchery visit, scenic highway drive to Colombo Airport for your departure flight with unforgettable Sri Lankan memories.'
+        description: 'Morning coastal leisure, optional turtle hatchery visit, scenic highway drive to Colombo Airport for your departure flight with unforgettable memories.'
       }
     ]
   },
@@ -194,103 +205,104 @@ const TOUR_PACKAGES: TourPackage[] = [
     subtitle: 'From ancient monolithic fortresses and dolphin pods to royal hills and serene southern shores.',
     priceLKR: 'from LKR 690,000 / person',
     priceUSD: 'from $2,250 USD / person',
-    image: 'https://images.unsplash.com/photo-1586861635167-e5223aadc9fe?auto=format&fit=crop&w=1200&q=85',
+    image: images.tours.heritage.src,
+    fallbackImage: images.tours.heritage.fallback,
     route: 'Negombo · Kalpitiya · Sigiriya · Kandy · Nuwara Eliya · Ella · Yala · Galle · Colombo',
     highlights: [
       'Kalpitiya Dolphin & Marine Safari',
-      'Sigiriya Lion Rock Fortress & Pidurangala',
-      'Dambulla Golden Cave Temple',
-      'Ceylon Tea Plantation & Colonial Nuwara Eliya',
-      'Little Adam’s Peak & Ravana Falls',
-      'Yala National Park 4x4 Safari & Galle Fort'
+      'Sigiriya 5th Century Lion Rock Fortress climb',
+      'Dambulla Golden Cave Temple UNESCO Site',
+      'Pedro Tea Estate & Nanu Oya scenic train',
+      'Full Day Yala Leopard & Sloth Bear Safari',
+      'Historic 17th-century Galle Dutch Fort'
     ],
     inclusions: [
-      '9 nights in curated 4-star and 5-star heritage hotels & beach resorts',
+      '9 nights in handpicked heritage hotels & boutique hillside tea lodges',
       'Private air-conditioned luxury vehicle throughout the tour',
-      'Daily breakfast & select dinners at hotel restaurants',
-      'All listed sight entrance tickets and private guided tours',
-      'Private 4x4 safari jeep in Yala with experienced wildlife ranger'
+      'Certified English/German/French speaking chauffeur-guide',
+      'All safari jeeps, national park permits, and boat excursion tickets',
+      'Complimentary airport concierge meet & greet with fresh orchid garlands'
     ],
     days: [
       {
         day: 1,
-        destination: 'Negombo',
-        title: 'Arrival & Beachside Relaxation',
+        destination: 'Negombo Coastal Town',
+        title: 'Ayubowan & Coastal Arrival',
         hotel: 'Heritance Negombo',
-        meals: 'Dinner',
-        description: 'Airport reception and short transfer to your beachfront retreat. Evening tropical cocktail watching the Indian Ocean sunset.'
+        meals: 'Dinner included',
+        description: 'Arrival at Colombo Airport (CMB). Paging greeting by chauffeur guide, short transfer to beachfront hotel.'
       },
       {
         day: 2,
-        destination: 'Kalpitiya',
-        title: 'Coastal Dolphin Watching & Lagoon',
-        hotel: 'Pal Palette Kalpitiya',
+        destination: 'Kalpitiya Peninsula',
+        title: 'Ocean Marine & Dolphin Pod Watching',
+        hotel: 'Dolphin Beach Resort Kalpitiya',
         meals: 'Breakfast & Dinner',
-        description: 'Drive north to Kalpitiya peninsula. Morning boat excursion into the open ocean to witness pods of spinning dolphins playing alongside the boat.'
+        description: 'Early morning boat excursion into the Indian Ocean to witness hundreds of spinner dolphins dancing alongside the boat.'
       },
       {
         day: 3,
         destination: 'Sigiriya Cultural Triangle',
-        title: 'Dambulla Rock Cave Temple',
-        hotel: 'Aliya Resort & Spa or Heritance Kandalama',
+        title: 'Dambulla Rock Cave Temple Monastery',
+        hotel: 'Heritance Kandalama',
         meals: 'Breakfast & Dinner',
-        description: 'Journey east into the Cultural Triangle. Climb to the ancient Dambulla Cave Temple featuring 150+ gilded Buddha statues painted on cavern ceilings.'
+        description: 'Drive inland toward the ancient Cultural Triangle. Explore the spectacular cave shrines of Dambulla containing ancient Buddhist murals.'
       },
       {
         day: 4,
-        destination: 'Sigiriya',
-        title: 'Lion Rock Fortress & Village Cooking Tour',
+        destination: 'Sigiriya / Polonnaruwa',
+        title: 'Lion Rock Fortress & Ancient Medieval Ruins',
         hotel: 'Heritance Kandalama',
-        meals: 'Breakfast & Lunch',
-        description: 'Early morning ascent of King Kashyapa’s 5th-century Sigiriya Lion Rock Fortress. Afternoon traditional bullock cart ride and authentic village curry lunch.'
+        meals: 'Breakfast & Dinner',
+        description: 'Ascend the dramatic 5th-century rock fortress of King Kashyapa before the midday sun. Afternoon bicycle tour among ancient Polonnaruwa palaces.'
       },
       {
         day: 5,
-        destination: 'Kandy',
-        title: 'Royal Botanical Gardens & Temple of Tooth',
+        destination: 'Kandy Royal Hill City',
+        title: 'Matale Spice Farm & Temple of the Tooth',
         hotel: 'Earl’s Regency Kandy',
         meals: 'Breakfast & Dinner',
-        description: 'Drive through spice hills to Kandy. Visit Peradeniya Royal Botanical Gardens with giant palms and orchids, followed by the sacred Temple of the Tooth Relic.'
+        description: 'Scenic drive to Kandy, stopping at an organic spice plantation. Evening visit to the Sacred Tooth Relic Temple during evening puja ceremony.'
       },
       {
         day: 6,
-        destination: 'Nuwara Eliya',
-        title: 'Little England & Ceylon Tea Estates',
-        hotel: 'The Grand Hotel Nuwara Eliya',
+        destination: 'Nuwara Eliya Hill Station',
+        title: 'Ramboda Falls & Ceylon Tea Estate Trails',
+        hotel: 'Grand Hotel Nuwara Eliya',
         meals: 'Breakfast & Dinner',
-        description: 'Ascend into the misty tea mountains. Tour a heritage tea factory, walk through green tea bushes, and stroll around colonial Gregory Lake.'
+        description: 'Ascend through dramatic waterfalls into the mist-draped hill country. Tour a working tea factory and taste authentic pure Ceylon Pekoe tea.'
       },
       {
         day: 7,
-        destination: 'Ella',
-        title: 'High Altitude Railway & Nine Arches Bridge',
+        destination: 'Ella Highland Village',
+        title: 'Scenic Observation Train & Little Adam’s Peak',
         hotel: '98 Acres Resort Ella',
         meals: 'Breakfast & Dinner',
-        description: 'Take the scenic highland train ride to Ella. Hike Little Adam’s Peak and photograph the architectural wonder of the Nine Arches Bridge.'
+        description: 'Board the iconic blue hill country train across gorges and pine forests to Ella. Sunset hike up Little Adam’s Peak overlooking Ella Gap.'
       },
       {
         day: 8,
-        destination: 'Yala',
-        title: 'Ravana Falls & Yala Wildlife Safari',
+        destination: 'Yala National Park',
+        title: 'Rawana Falls & Afternoon 4x4 Leopard Safari',
         hotel: 'Cinnamon Wild Yala',
         meals: 'Breakfast & Dinner',
-        description: 'Marvel at Ravana Falls before driving to Yala. Late afternoon 4x4 safari exploring block 1 in search of leopards, sloth bears, and wild elephants.'
+        description: 'Stop at cascading Rawana Falls before heading to the southern plains. Afternoon game drive in Yala to spot leopards, elephants, and crocodiles.'
       },
       {
         day: 9,
-        destination: 'Galle Fort & Coast',
-        title: 'Historic UNESCO Galle Fort Sunset Walk',
-        hotel: 'Le Grand Galle or Radisson Blu Resort',
+        destination: 'Galle Coastal Fort',
+        title: 'Stilt Fishermen & UNESCO Dutch Fort Walk',
+        hotel: 'Le Grand Galle or Amangalla',
         meals: 'Breakfast',
-        description: 'Drive along the southern coastal road. Explore the colonial Dutch cobblestone streets of Galle Fort, artisan boutiques, and maritime museum.'
+        description: 'Drive along the southern shoreline, observing traditional stilt fishermen. Walking tour of 17th-century cobblestone alleys, lighthouse, and art galleries.'
       },
       {
         day: 10,
-        destination: 'Colombo / Departure',
-        title: 'Capital Highlights & Airport Departure',
+        destination: 'Colombo Airport Departure',
+        title: 'Coastal Highway Transfer & Safe Journey Home',
         hotel: 'Departure',
         meals: 'Breakfast',
-        description: 'Scenic drive to Colombo. Brief city tour of Independence Square, Gangaramaya Temple, and transfer to Bandaranaike International Airport.'
+        description: 'Southern Expressway transfer to Colombo International Airport for your departure flight.'
       }
     ]
   },
@@ -299,52 +311,54 @@ const TOUR_PACKAGES: TourPackage[] = [
     duration: '14 Nights / 15 Days',
     daysCount: 15,
     nightsCount: 14,
-    title: 'The Grand Island Expedition',
+    title: 'Grand All-Island Discovery Circuit',
     category: 'extended',
-    subtitle: 'An epic complete odyssey from Jaffna’s northern temples to the surf of Arugam Bay and ancient kingdoms.',
-    priceLKR: 'from LKR 1,150,000 / person',
-    priceUSD: 'from $3,750 USD / person',
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=85',
-    route: 'Negombo · Kalpitiya · Wilpattu · Jaffna · Anuradhapura · Sigiriya · Kandy · Ella · Arugam Bay · Yala · Mirissa · Galle · Colombo',
+    subtitle: 'The definitive Sri Lanka expedition covering the northern peninsula, east coast surf, misty hills, wildlife and south.',
+    priceLKR: 'from LKR 1,180,000 / person',
+    priceUSD: 'from $3,850 USD / person',
+    image: images.tours.grand.src,
+    fallbackImage: images.tours.grand.fallback,
+    route: 'Colombo · Wilpattu · Jaffna · Trincomalee · Sigiriya · Kandy · Ella · Arugam Bay · Yala · Galle · Colombo',
     highlights: [
-      'Wilpattu Wilderness & Natural Lakes Safari',
-      'Jaffna Peninsula, Nallur Kovil & Point Pedro',
-      'Ancient UNESCO Anuradhapura Monastic Ruins',
-      'Arugam Bay Golden Beaches & Point Break Surf',
-      'Yala National Park Wild BBQ Experience',
-      'Madu River Mangrove Boat Safari & Galle Fort'
+      'Wilpattu National Park Private Safari',
+      'Jaffna Peninsula & Nallur Kandaswamy Kovil',
+      'Trincomalee Pigeon Island Coral Snorkeling',
+      'Sigiriya & Pidurangala Sunrise Viewpoint',
+      'Kandy Esala & Botanical Gardens',
+      'Arugam Bay East Coast Surfing Vibe',
+      'Wild Coast Tented Safari & Beach BBQ'
     ],
     inclusions: [
-      '14 nights in handpicked luxury resorts, heritage villas & coastal boutique lodges',
-      'Dedicated executive vehicle with top-tier licensed Chauffeur-Guide throughout',
-      'Daily breakfast, selected lunches, and authentic Sri Lankan dinners',
-      '2x National Park Safaris (Wilpattu & Yala) with private 4x4 jeeps',
-      'Internal scenic train tickets, boat rides, and site entrance permits'
+      '14 nights in Sri Lanka’s premier 5-star boutique hotels & eco-lodges',
+      'Private dedicated luxury vehicle & chauffeur guide for all 15 days',
+      'Internal scenic train tickets & marine boat charters',
+      'All national park safari jeeps, trackers, and admissions included',
+      'Complimentary 24/7 concierge support hotline across the island'
     ],
     days: [
       {
         day: 1,
-        destination: 'Negombo',
-        title: 'Arrival in Colombo & Coastal Resort Check-in',
-        hotel: 'Jetwing Beach Negombo',
-        meals: 'Dinner',
-        description: 'Personalized airport greeting and transfer to Negombo.'
+        destination: 'Colombo / Negombo',
+        title: 'Airport VIP Arrival & Refreshment',
+        hotel: 'The Wallawwa Boutique Hotel',
+        meals: 'Dinner included',
+        description: 'VIP airport arrival greeting and relaxation at a historic colonial manor house surrounded by tropical gardens.'
       },
       {
         day: 2,
-        destination: 'Kalpitiya',
-        title: 'Dolphin Watching Ocean Safari',
-        hotel: 'Dolphin Beach Resort',
+        destination: 'Wilpattu National Park',
+        title: 'Ancient Villu Lakes & Wilderness Safari',
+        hotel: 'Mahoora Tented Safari Camp',
         meals: 'Breakfast & Dinner',
-        description: 'Morning boat excursion to view hundreds of spinner dolphins.'
+        description: 'Explore Sri Lanka’s largest and oldest national park, characterized by natural rainwater lakes (villus).'
       },
       {
         day: 3,
-        destination: 'Wilpattu National Park',
-        title: 'Deep Wilderness & Leopard Safari',
-        hotel: 'Mahoora Tented Safari Camp',
-        meals: 'All Meals Included',
-        description: 'Full day safari in Sri Lanka’s largest and oldest national park with natural lakes (villus).'
+        destination: 'Anuradhapura',
+        title: 'Ancient Sacred Capital & Monasteries',
+        hotel: 'Ulagalla by Uga Escapes',
+        meals: 'Breakfast & Dinner',
+        description: 'Visit the 2,500-year-old sacred city, Jaya Sri Maha Bodhi tree, and towering stupas.'
       },
       {
         day: 4,
@@ -352,7 +366,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Northern Cultural Journey',
         hotel: 'Jetwing Jaffna',
         meals: 'Breakfast & Dinner',
-        description: 'Drive along Elephant Pass into the unique cultural landscape of the Tamil north.'
+        description: 'Drive along Elephant Pass into the distinctive cultural landscape and culinary traditions of the Tamil north.'
       },
       {
         day: 5,
@@ -360,15 +374,15 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Nallur Kandaswamy Temple & Point Pedro',
         hotel: 'Jetwing Jaffna',
         meals: 'Breakfast & Dinner',
-        description: 'Visit the northernmost tip of Sri Lanka at Point Pedro and explore historic Jaffna Fort.'
+        description: 'Visit the northernmost tip of Sri Lanka at Point Pedro and explore historic Jaffna Fort and Nallur Kovil.'
       },
       {
         day: 6,
-        destination: 'Anuradhapura',
-        title: 'Sacred Ancient Capital Ruins',
-        hotel: 'Ulagalla by Uga Escapes',
+        destination: 'Trincomalee',
+        title: 'East Coast Beaches & Koneswaram Temple',
+        hotel: 'Trinco Blu by Cinnamon',
         meals: 'Breakfast & Dinner',
-        description: 'Explore the 2,500-year-old sacred city, Jaya Sri Maha Bodhi tree, and massive stupas.'
+        description: 'Cross to the northeastern coastline. Visit the cliffside Koneswaram Temple overlooking the Indian Ocean.'
       },
       {
         day: 7,
@@ -376,7 +390,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Lion Rock & Pidurangala Sunset',
         hotel: 'Heritance Kandalama',
         meals: 'Breakfast & Dinner',
-        description: 'Climb the 5th-century rock fortress and witness sunset from Pidurangala.'
+        description: 'Climb the 5th-century rock fortress and witness sunset from the summit of Pidurangala rock.'
       },
       {
         day: 8,
@@ -384,7 +398,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Matale Spices & Royal Temple of Tooth',
         hotel: 'The Grand Kandyan',
         meals: 'Breakfast & Dinner',
-        description: 'Drive through the central hills with temple visits and evening cultural performances.'
+        description: 'Drive through the central hills with temple visits and evening cultural drum performances.'
       },
       {
         day: 9,
@@ -392,7 +406,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'World Famous Scenic Train Ride',
         hotel: '98 Acres Resort Ella',
         meals: 'Breakfast & Dinner',
-        description: 'Observation deck train journey passing through waterfalls and misty cloud forests.'
+        description: 'Observation deck train journey passing through tea plantations, waterfalls, and mist-veiled cloud forests.'
       },
       {
         day: 10,
@@ -400,7 +414,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'East Coast Surf & Dune Sunset',
         hotel: 'Kottukal Beach House by Jetwing',
         meals: 'Breakfast',
-        description: 'Cross into the sun-drenched east coast, known for world-class surfing waves and relaxed vibes.'
+        description: 'Cross into the sun-drenched east coast, known for world-class surfing waves and relaxed bohemian atmosphere.'
       },
       {
         day: 11,
@@ -408,7 +422,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Lagoon Safari & Beach Leisure',
         hotel: 'Kottukal Beach House by Jetwing',
         meals: 'Breakfast',
-        description: 'Pottuvil lagoon eco-boat tour to spot water monitors, crocodiles, and wild elephants.'
+        description: 'Pottuvil lagoon eco-boat tour to spot water monitors, crocodiles, and wild bathing elephants.'
       },
       {
         day: 12,
@@ -416,7 +430,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Southern Wildlife & Bush BBQ',
         hotel: 'Wild Coast Tented Lodge',
         meals: 'Breakfast & Wild BBQ Dinner',
-        description: '4x4 safari with wildlife tracking and an unforgettable beachside bush BBQ under the stars.'
+        description: '4x4 safari with wildlife tracking and an unforgettable beachside bush BBQ under the star-studded southern sky.'
       },
       {
         day: 13,
@@ -424,7 +438,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Southern Beach Coast & Whale Watching',
         hotel: 'Weligama Bay Marriott Resort',
         meals: 'Breakfast',
-        description: 'Blue whale watching boat excursion and sunset drinks at Coconut Tree Hill.'
+        description: 'Blue whale watching boat excursion and sunset cocktails at Coconut Tree Hill.'
       },
       {
         day: 14,
@@ -432,7 +446,7 @@ const TOUR_PACKAGES: TourPackage[] = [
         title: 'Historic Fort & Coastal Charm',
         hotel: 'Amangalla or Le Grand Galle',
         meals: 'Breakfast & Dinner',
-        description: 'Walk the historic ramparts, colonial museums, and relax by the tropical coast.'
+        description: 'Walk the historic ramparts, colonial museums, and relax by the tropical turquoise coast.'
       },
       {
         day: 15,
@@ -444,59 +458,102 @@ const TOUR_PACKAGES: TourPackage[] = [
       }
     ]
   }
-];
+]);
 
-// Day Excursions
-const DAY_EXCURSIONS = [
+// ------------------------------------------------------------------------------
+// 3. DAY EXCURSIONS (Dynamic image assets)
+// ------------------------------------------------------------------------------
+const DAY_EXCURSIONS = computed(() => [
   {
     title: 'Sigiriya & Dambulla Day Excursion',
     duration: 'Full Day (10-12 hrs)',
     departure: 'From Colombo, Negombo or Kandy',
-    image: 'https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&w=700&q=80',
+    image: images.excursions.sigiriya.src,
+    fallback: images.excursions.sigiriya.fallback,
     description: 'Scale the 5th-century Lion Rock fortress and explore Dambulla Cave Temple with a private chauffeur-guide.'
   },
   {
     title: 'Galle Fort & Madu River Boat Safari',
     duration: 'Full Day (8-10 hrs)',
     departure: 'From Colombo, Bentota or Galle',
-    image: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=700&q=80',
+    image: images.excursions.galle.src,
+    fallback: images.excursions.galle.fallback,
     description: 'Explore the UNESCO 17th-century ramparts, cinnamon islands on Madu River, and sea turtle hatcheries.'
   },
   {
     title: 'Kandy Cultural & Tea Trail Tour',
     duration: 'Full Day (9-11 hrs)',
     departure: 'From Colombo or Negombo',
-    image: 'https://images.unsplash.com/photo-1563911302283-d2bc129e7570?auto=format&fit=crop&w=700&q=80',
+    image: images.excursions.kandy.src,
+    fallback: images.excursions.kandy.fallback,
     description: 'Visit the Sacred Temple of the Tooth Relic, Peradeniya Botanical Gardens, and a heritage Ceylon tea factory.'
   },
   {
     title: 'Yala National Park 4x4 Leopard Safari',
     duration: 'Half Day (4 hrs) or Full Day',
     departure: 'From Yala, Tissamaharama or Hambantota',
-    image: 'https://images.unsplash.com/photo-1516426122078-c23e76319801?auto=format&fit=crop&w=700&q=80',
+    image: images.excursions.yala.src,
+    fallback: images.excursions.yala.fallback,
     description: 'Track leopards, wild elephants, sloth bears, and exotic birds in customized high-clearance 4x4 safari jeeps.'
   }
-];
+]);
 
-// Filtered tours
+// ------------------------------------------------------------------------------
+// 4. PRIVATE LUXURY FLEET (Dynamic image assets)
+// ------------------------------------------------------------------------------
+const FLEET_VEHICLES = computed(() => [
+  {
+    name: 'Toyota KDH Luxury High-Roof Van',
+    capacity: '2 - 7 Guests + Luggage',
+    features: ['High-Roof Dual AC', 'Reclining Luxury Seats', 'Complimentary WiFi & Cool Box', 'USB Charging Ports'],
+    image: images.fleet.kdhVan.src,
+    fallback: images.fleet.kdhVan.fallback,
+    description: 'Our most popular touring vehicle for couples and families across Sri Lanka circuits.'
+  },
+  {
+    name: 'Executive Touring Sedan (Premio / Allion)',
+    capacity: '1 - 3 Guests + Luggage',
+    features: ['Climate Control AC', 'Plush Leather Interior', 'Smooth Ride Suspension', 'Ideal for Couples'],
+    image: images.fleet.sedan.src,
+    fallback: images.fleet.sedan.fallback,
+    description: 'Refined comfort for solo travelers, couples, and executive business travelers.'
+  },
+  {
+    name: 'Toyota Coaster Luxury Tourist Coach',
+    capacity: '8 - 18 Guests + Luggage',
+    features: ['Panoramic View Windows', 'Full PA Audio System', 'Spacious Legroom', 'Dedicated Luggage Bay'],
+    image: images.fleet.miniCoach.src,
+    fallback: images.fleet.miniCoach.fallback,
+    description: 'Designed for small groups, university tours, and extended family expeditions.'
+  },
+  {
+    name: 'Toyota Land Cruiser Prado 4x4',
+    capacity: '1 - 4 Guests + Gear',
+    features: ['All-Terrain 4WD', 'High Ground Clearance', 'Leather Interior', 'Wilderness & Hill Roads'],
+    image: images.fleet.suv.src,
+    fallback: images.fleet.suv.fallback,
+    description: 'Premium adventure transport for wildlife photographers and luxury safari travelers.'
+  }
+]);
+
+// Filtered tours computed
 const filteredTours = computed(() => {
-  return TOUR_PACKAGES.filter(tour => {
-    const matchesCategory =
+  return TOUR_PACKAGES.value.filter(tour => {
+    return (
       activeCategoryTab.value === 'all' ||
       tour.category === activeCategoryTab.value ||
       (activeCategoryTab.value === 'classic' && tour.id.includes('classic')) ||
-      (activeCategoryTab.value === 'extended' && tour.id.includes('grand'));
-    return matchesCategory;
+      (activeCategoryTab.value === 'extended' && tour.id.includes('grand'))
+    );
   });
 });
 
-// Open Itinerary Modal
+// Modal helpers
 const openTourModal = (tour: TourPackage) => {
   selectedTour.value = tour;
   showItineraryModal.value = true;
 };
 
-// Select Tour & Scroll to Form
 const selectTourForInquiry = (tourId: string) => {
   inquiryForm.value.package_interest = tourId;
   const element = document.getElementById('inquiry-section');
@@ -505,7 +562,7 @@ const selectTourForInquiry = (tourId: string) => {
   }
 };
 
-// Handle Inquiry Submission (POST /api/inquiries via apiClient)
+// Handle Inquiry Submission
 const handleInquirySubmit = async () => {
   submittingInquiry.value = true;
   inquiryError.value = null;
@@ -534,33 +591,43 @@ const handleInquirySubmit = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-600 selection:text-white">
+  <div class="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans selection:bg-emerald-600 selection:text-white transition-colors duration-300">
     
     <!-- ==================================================================== -->
     <!-- 1. TOP ANNOUNCEMENT & CONTACT BAR -->
     <!-- ==================================================================== -->
-    <div class="bg-emerald-950 border-b border-emerald-900/60 px-4 py-2 text-xs text-emerald-200">
+    <div class="bg-emerald-900/90 dark:bg-emerald-950 border-b border-emerald-800/60 dark:border-emerald-900/60 px-4 py-2 text-xs text-emerald-100 dark:text-emerald-200 transition-colors">
       <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
         <div class="flex items-center gap-4 text-[11px]">
           <span class="flex items-center gap-1.5">
-            <MapPin class="w-3.5 h-3.5 text-emerald-400" />
-            <span>L 12, Ceylinco House, Colombo 01, Sri Lanka</span>
+            <MapPin class="w-3.5 h-3.5 text-emerald-300" />
+            <!-- Dynamic Whitelabel Address -->
+            <span>{{ company.contact.address }}, {{ company.contact.country }}</span>
           </span>
           <span class="hidden md:flex items-center gap-1.5">
-            <Clock class="w-3.5 h-3.5 text-emerald-400" />
-            <span>24/7 Island Concierge</span>
+            <Clock class="w-3.5 h-3.5 text-emerald-300" />
+            <!-- Dynamic Operating Hours -->
+            <span>{{ company.contact.operatingHours }}</span>
           </span>
         </div>
 
         <div class="flex items-center gap-4 text-[11px]">
-          <a href="tel:+94743942844" class="flex items-center gap-1.5 hover:text-white transition-colors">
-            <Phone class="w-3.5 h-3.5 text-emerald-400" />
-            <span>+94 74 394 2844</span>
+          <!-- Dynamic Direct Phone -->
+          <a :href="'tel:' + company.contact.phoneRaw" class="flex items-center gap-1.5 hover:text-white transition-colors">
+            <Phone class="w-3.5 h-3.5 text-emerald-300" />
+            <span>{{ company.contact.phone }}</span>
           </a>
-          <a href="mailto:info@metshutravels.com" class="flex items-center gap-1.5 hover:text-white transition-colors">
-            <Mail class="w-3.5 h-3.5 text-emerald-400" />
-            <span>info@metshutravels.com</span>
+
+          <!-- Dynamic Email -->
+          <a :href="'mailto:' + company.contact.email" class="hidden sm:flex items-center gap-1.5 hover:text-white transition-colors">
+            <Mail class="w-3.5 h-3.5 text-emerald-300" />
+            <span>{{ company.contact.email }}</span>
           </a>
+
+          <!-- Accessible Theme Toggle in Top Bar -->
+          <div class="border-l border-emerald-700/60 pl-3">
+            <ThemeToggle compact />
+          </div>
         </div>
       </div>
     </div>
@@ -568,77 +635,86 @@ const handleInquirySubmit = async () => {
     <!-- ==================================================================== -->
     <!-- 2. MAIN HEADER & NAVIGATION -->
     <!-- ==================================================================== -->
-    <header class="sticky top-0 z-40 bg-slate-900/95 backdrop-blur border-b border-slate-800 shadow-xl">
+    <header class="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-800 shadow-sm dark:shadow-xl transition-colors duration-300">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-        <!-- Logo -->
+        
+        <!-- Whitelabel Brand Logo -->
         <a href="#home" class="flex items-center gap-3 group">
-          <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-700 to-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-950 group-hover:scale-105 transition-transform">
+          <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-600/30 group-hover:scale-105 transition-transform">
             <Compass class="w-6 h-6" />
           </div>
           <div>
-            <span class="block font-black text-xl tracking-wider text-white">METSHU</span>
-            <span class="block text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-400">Travels &bull; Sri Lanka</span>
+            <span class="block font-black text-xl tracking-wider text-slate-900 dark:text-white uppercase">{{ company.shortName }}</span>
+            <span class="block text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-600 dark:text-emerald-400">Travels &bull; Sri Lanka</span>
           </div>
         </a>
 
         <!-- Desktop Navigation Links -->
-        <nav class="hidden lg:flex items-center gap-7 text-xs font-semibold uppercase tracking-wider text-slate-300">
-          <a href="#tours" class="hover:text-emerald-400 transition-colors">Tour Packages</a>
-          <a href="#excursions" class="hover:text-emerald-400 transition-colors">Day Excursions</a>
-          <a href="#fleet" class="hover:text-emerald-400 transition-colors">Private Fleet</a>
-          <a href="#why-us" class="hover:text-emerald-400 transition-colors">Why Choose Us</a>
-          <a href="#reviews" class="hover:text-emerald-400 transition-colors">Reviews</a>
-          <a href="#inquiry-section" class="hover:text-emerald-400 transition-colors">Plan My Trip</a>
+        <nav class="hidden lg:flex items-center gap-7 text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">
+          <a href="#tours" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">Tour Packages</a>
+          <a href="#excursions" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">Day Excursions</a>
+          <a href="#fleet" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">Private Fleet</a>
+          <a href="#gallery" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">Highlights</a>
+          <a href="#why-us" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">Why Choose Us</a>
+          <a href="#inquiry-section" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">Plan My Trip</a>
         </nav>
 
         <!-- Action Buttons -->
-        <div class="flex items-center gap-3">
-          <!-- CRITICAL: Working Operations System Button requested by user -->
+        <div class="flex items-center gap-2.5">
+          <!-- Accessible Theme Toggle in Header -->
+          <ThemeToggle />
+
+          <!-- Working DMC Operations System Button -->
           <button
             @click="emit('open-operations')"
-            class="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs px-3.5 py-2.5 rounded-lg shadow-lg shadow-emerald-950 transition-all border border-emerald-400/30 group"
-            title="Switch to Serendib / Metshu DMC Operations & Bookings Panel"
+            class="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs px-3.5 py-2.5 rounded-lg shadow-md shadow-emerald-950/20 transition-all border border-emerald-400/30 group"
+            title="Switch to DMC Operations & Bookings Panel"
           >
-            <LayoutDashboard class="w-4 h-4 text-emerald-200 group-hover:rotate-12 transition-transform" />
-            <span class="font-mono">DMC Operations</span>
+            <LayoutDashboard class="w-4 h-4 text-emerald-100 group-hover:rotate-12 transition-transform" />
+            <span class="font-mono hidden sm:inline">DMC Operations</span>
           </button>
 
           <a
             href="#inquiry-section"
-            class="hidden sm:inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-bold px-4 py-2.5 rounded-lg border border-slate-700 transition-colors"
+            class="hidden sm:inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 transition-colors"
           >
             <span>Book a Tour</span>
-            <ArrowRight class="w-3.5 h-3.5 text-emerald-400" />
+            <ArrowRight class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
           </a>
         </div>
       </div>
     </header>
 
     <!-- ==================================================================== -->
-    <!-- 3. HERO SECTION WITH HIGH-IMPACT VISUALS -->
+    <!-- 3. HERO SECTION (Dynamic Hero Image & Whitelabel Branding) -->
     <!-- ==================================================================== -->
     <section id="home" class="relative min-h-[640px] lg:min-h-[720px] flex items-center justify-center overflow-hidden">
-      <!-- Background Image with Overlay -->
+      <!-- Background Image with Central Fallback Handling -->
       <img
-        src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=2200&q=90"
-        alt="Sri Lanka tropical paradise beach and ocean waves"
+        :src="images.hero.main.src"
+        :alt="images.hero.main.alt"
+        @error="handleImageError($event, images.hero.main.fallback)"
         class="absolute inset-0 w-full h-full object-cover object-center"
       />
-      <div class="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/75 to-slate-950/60"></div>
+      <!-- Adaptive Dark/Light Overlay -->
+      <div class="absolute inset-0 bg-gradient-to-r from-slate-950/95 via-slate-950/80 to-slate-950/60"></div>
 
       <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 text-center sm:text-left z-10 w-full">
         <div class="max-w-3xl space-y-6">
-          <div class="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-full text-emerald-400 text-xs font-bold uppercase tracking-widest">
+          <div class="inline-flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/40 px-3 py-1.5 rounded-full text-emerald-300 text-xs font-bold uppercase tracking-widest backdrop-blur-sm">
             <Sparkles class="w-3.5 h-3.5" />
-            <span>Sri Lanka Tour Operator & DMC</span>
+            <!-- Dynamic Subtitle -->
+            <span>{{ company.subTagline }} &bull; SLTDA Certified DMC</span>
           </div>
 
+          <!-- Dynamic Main Tagline -->
           <h1 class="text-4xl sm:text-6xl font-black text-white leading-tight tracking-tight">
             Personalized &amp; Unforgettable Journeys Across <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-amber-300">Sri Lanka.</span>
           </h1>
 
-          <p class="text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed">
-            From the misty tea mountains of Nuwara Eliya and Sigiriya’s ancient fortress to Yala’s leopard safaris and pristine southern shores. Thoughtfully crafted with local insight, private luxury transport, and handpicked stays.
+          <!-- Dynamic Company Description -->
+          <p class="text-base sm:text-lg text-slate-200 max-w-2xl leading-relaxed">
+            {{ company.description }}
           </p>
 
           <!-- CTAs -->
@@ -661,7 +737,7 @@ const handleInquirySubmit = async () => {
           </div>
 
           <!-- Feature Badges -->
-          <div class="pt-8 border-t border-slate-800/80 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold text-slate-300">
+          <div class="pt-8 border-t border-slate-700/60 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-semibold text-slate-200">
             <div class="flex items-center gap-2">
               <Check class="w-4 h-4 text-emerald-400" />
               <span>100% Tailor-Made</span>
@@ -684,16 +760,16 @@ const handleInquirySubmit = async () => {
     </section>
 
     <!-- ==================================================================== -->
-    <!-- 4. FEATURED MULTI-DAY TOUR PACKAGES (metshutravels.com flagship) -->
+    <!-- 4. FEATURED TOUR PACKAGES (metshutravels.com flagship) -->
     <!-- ==================================================================== -->
-    <section id="tours" class="py-20 bg-slate-900/60 border-y border-slate-800">
+    <section id="tours" class="py-20 bg-slate-100/70 dark:bg-slate-900/60 border-y border-slate-200 dark:border-slate-800 transition-colors">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <!-- Section Header -->
         <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
           <div>
-            <span class="text-xs font-bold uppercase tracking-widest text-emerald-400">Curated Itineraries</span>
-            <h2 class="text-3xl sm:text-4xl font-black text-white mt-1">Featured Sri Lanka Tour Packages</h2>
-            <p class="text-sm text-slate-400 mt-2 max-w-xl">
+            <span class="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Curated Itineraries</span>
+            <h2 class="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mt-1">Featured Sri Lanka Tour Packages</h2>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mt-2 max-w-xl">
               All packages include 3-5 star boutique accommodations, private air-conditioned transport, licensed chauffeur-guide, breakfast, and all listed experiences.
             </p>
           </div>
@@ -708,7 +784,7 @@ const handleInquirySubmit = async () => {
               ]"
               :key="cat.id"
               @click="activeCategoryTab = cat.id"
-              :class="activeCategoryTab === cat.id ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+              :class="activeCategoryTab === cat.id ? 'bg-emerald-600 text-white font-bold' : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'"
               class="px-4 py-2 rounded-lg text-xs transition-colors"
             >
               {{ cat.label }}
@@ -721,17 +797,18 @@ const handleInquirySubmit = async () => {
           <article
             v-for="tour in filteredTours"
             :key="tour.id"
-            class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-emerald-500/50 transition-all duration-300 flex flex-col group shadow-xl"
+            class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:border-emerald-500/60 transition-all duration-300 flex flex-col group shadow-lg dark:shadow-xl"
           >
-            <!-- Card Image with Duration Badge -->
-            <div class="relative h-60 overflow-hidden">
+            <!-- Card Image with Dynamic Fallback & Duration Badge -->
+            <div class="relative h-60 overflow-hidden bg-slate-800">
               <img
                 :src="tour.image"
                 :alt="tour.title"
+                @error="handleImageError($event, tour.fallbackImage)"
                 loading="lazy"
                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
               />
-              <div class="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent opacity-80"></div>
+              <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
               <span class="absolute top-3 right-3 bg-emerald-600 text-white text-[11px] font-bold px-3 py-1 rounded-full shadow-lg">
                 {{ tour.duration }}
               </span>
@@ -747,19 +824,19 @@ const handleInquirySubmit = async () => {
             <!-- Card Body -->
             <div class="p-6 flex-1 flex flex-col justify-between space-y-5">
               <div>
-                <h3 class="text-xl font-bold text-white group-hover:text-emerald-400 transition-colors">
+                <h3 class="text-xl font-bold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                   {{ tour.title }}
                 </h3>
-                <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
                   {{ tour.subtitle }}
                 </p>
 
                 <!-- Highlights List -->
                 <div class="mt-4 space-y-1.5">
-                  <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Package Highlights:</span>
-                  <ul class="text-xs text-slate-300 space-y-1">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Package Highlights:</span>
+                  <ul class="text-xs text-slate-700 dark:text-slate-300 space-y-1">
                     <li v-for="h in tour.highlights.slice(0, 3)" :key="h" class="flex items-start gap-2">
-                      <Check class="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                      <Check class="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
                       <span>{{ h }}</span>
                     </li>
                   </ul>
@@ -767,25 +844,25 @@ const handleInquirySubmit = async () => {
               </div>
 
               <!-- Card Pricing and Actions -->
-              <div class="pt-4 border-t border-slate-800 space-y-3">
+              <div class="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
                 <div class="flex items-baseline justify-between">
                   <span class="text-[10px] text-slate-500 uppercase font-semibold">Tailor-Made Rates</span>
                   <div class="text-right">
-                    <span class="block text-sm font-bold font-mono text-emerald-400">{{ tour.priceLKR }}</span>
-                    <span class="block text-[10px] text-slate-400 font-mono">({{ tour.priceUSD }})</span>
+                    <span class="block text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400">{{ tour.priceLKR }}</span>
+                    <span class="block text-[10px] text-slate-500 font-mono">({{ tour.priceUSD }})</span>
                   </div>
                 </div>
 
                 <div class="grid grid-cols-2 gap-2">
                   <button
                     @click="openTourModal(tour)"
-                    class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold py-2.5 rounded-lg transition-colors text-center"
+                    class="w-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold py-2.5 rounded-lg transition-colors text-center"
                   >
                     View Day Plan
                   </button>
                   <button
                     @click="selectTourForInquiry(tour.id)"
-                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors text-center shadow-md shadow-emerald-950"
+                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 rounded-lg transition-colors text-center shadow-md shadow-emerald-950/20"
                   >
                     Inquire Now
                   </button>
@@ -798,345 +875,352 @@ const handleInquirySubmit = async () => {
     </section>
 
     <!-- ==================================================================== -->
-    <!-- 5. DAY EXCURSIONS & SIGNATURE EXPERIENCES -->
+    <!-- 5. DAY EXCURSIONS SECTION (Dynamic Image Assets) -->
     <!-- ==================================================================== -->
-    <section id="excursions" class="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="text-center max-w-2xl mx-auto mb-12">
-        <span class="text-xs font-bold uppercase tracking-widest text-emerald-400">Day Excursions</span>
-        <h2 class="text-3xl font-black text-white mt-1">Short Excursions &amp; Day Tours</h2>
-        <p class="text-xs text-slate-400 mt-2">
-          Private day trips with private chauffeur-guide, pickup from any hotel, entrance fees and return transfer.
-        </p>
-      </div>
+    <section id="excursions" class="py-20 bg-slate-50 dark:bg-slate-950 transition-colors">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-2xl mx-auto mb-14">
+          <span class="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Day Trips &amp; Safaris</span>
+          <h2 class="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mt-1">Signature Sri Lanka Day Excursions</h2>
+          <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">
+            Short on time? Join our private full-day &amp; half-day excursions with hotel pickup, luxury vehicle, admissions, and personal chauffeur-guide.
+          </p>
+        </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div
-          v-for="exc in DAY_EXCURSIONS"
-          :key="exc.title"
-          class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden hover:border-slate-700 transition-colors flex flex-col"
-        >
-          <div class="h-44 overflow-hidden relative">
-            <img :src="exc.image" :alt="exc.title" class="w-full h-full object-cover" />
-            <span class="absolute bottom-2 left-2 bg-slate-950/90 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded">
-              {{ exc.duration }}
-            </span>
-          </div>
-          <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
-            <div>
-              <h4 class="font-bold text-white text-sm">{{ exc.title }}</h4>
-              <p class="text-[11px] text-slate-400 mt-1 line-clamp-3">{{ exc.description }}</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div
+            v-for="exc in DAY_EXCURSIONS"
+            :key="exc.title"
+            class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden hover:border-emerald-500/50 transition-all flex flex-col group shadow-md"
+          >
+            <div class="relative h-44 overflow-hidden bg-slate-800">
+              <img
+                :src="exc.image"
+                :alt="exc.title"
+                @error="handleImageError($event, exc.fallback)"
+                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+              />
+              <span class="absolute bottom-2 left-2 bg-slate-950/80 backdrop-blur text-white text-[10px] font-semibold px-2 py-0.5 rounded">
+                {{ exc.duration }}
+              </span>
             </div>
-            <button
-              @click="inquiryForm.message = 'I am interested in booking the day excursion: ' + exc.title; selectTourForInquiry('day-tour');"
-              class="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
-            >
-              <span>Ask About Excursion</span>
-              <ChevronRight class="w-3.5 h-3.5" />
-            </button>
+            <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
+              <div>
+                <h4 class="font-bold text-sm text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                  {{ exc.title }}
+                </h4>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                  {{ exc.description }}
+                </p>
+              </div>
+              <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                <span class="text-slate-500">{{ exc.departure }}</span>
+                <button
+                  @click="selectTourForInquiry(exc.title)"
+                  class="text-emerald-600 dark:text-emerald-400 font-bold hover:underline"
+                >
+                  Book Trip &rarr;
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ==================================================================== -->
-    <!-- 6. FLEET & PRIVATE CHAUFFEUR GUIDES -->
+    <!-- 6. SCENIC GALLERY / HIGHLIGHTS (Dynamic useImages().gallery) -->
     <!-- ==================================================================== -->
-    <section id="fleet" class="py-20 bg-slate-900/40 border-y border-slate-800">
+    <section id="gallery" class="py-20 bg-slate-100/70 dark:bg-slate-900/60 border-y border-slate-200 dark:border-slate-800 transition-colors">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Visual Journey</span>
+            <h2 class="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mt-1">Sri Lanka Highlights Gallery</h2>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mt-2 max-w-xl">
+              Captivating destinations you will discover on our private circuits across paradise island.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div
+            v-for="item in images.gallery"
+            :key="item.id"
+            class="group relative h-64 rounded-2xl overflow-hidden shadow-lg border border-slate-200 dark:border-slate-800 bg-slate-800"
+          >
+            <img
+              :src="item.src"
+              :alt="item.alt"
+              @error="handleImageError($event, item.fallback)"
+              class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+            />
+            <div class="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/30 to-transparent"></div>
+            <div class="absolute bottom-4 left-4 right-4">
+              <span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400">{{ item.region }}</span>
+              <h3 class="text-base font-bold text-white mt-0.5">{{ item.title }}</h3>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- 7. PRIVATE LUXURY FLEET & CERTIFIED DRIVER GUIDES -->
+    <!-- ==================================================================== -->
+    <section id="fleet" class="py-20 bg-slate-50 dark:bg-slate-950 transition-colors">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center max-w-2xl mx-auto mb-14">
+          <span class="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Executive Transport</span>
+          <h2 class="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white mt-1">Private Luxury Vehicle Fleet</h2>
+          <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">
+            Every journey with {{ company.name }} includes a private air-conditioned vehicle and an accredited Sri Lanka Tourist Board chauffeur-guide.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div
+            v-for="v in FLEET_VEHICLES"
+            :key="v.name"
+            class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-md"
+          >
+            <div class="relative h-44 overflow-hidden bg-slate-800">
+              <img
+                :src="v.image"
+                :alt="v.name"
+                @error="handleImageError($event, v.fallback)"
+                class="w-full h-full object-cover"
+              />
+              <span class="absolute top-2 right-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                {{ v.capacity }}
+              </span>
+            </div>
+            <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
+              <div>
+                <h4 class="font-bold text-sm text-slate-900 dark:text-white">{{ v.name }}</h4>
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">{{ v.description }}</p>
+                <ul class="mt-3 space-y-1 text-[11px] text-slate-700 dark:text-slate-300">
+                  <li v-for="feat in v.features" :key="feat" class="flex items-center gap-1.5">
+                    <Check class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span>{{ feat }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- 8. WHY CHOOSE METSHU TRAVELS & SUSTAINABILITY -->
+    <!-- ==================================================================== -->
+    <section id="why-us" class="py-20 bg-slate-100/70 dark:bg-slate-900/60 border-y border-slate-200 dark:border-slate-800 transition-colors">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div class="space-y-6">
-            <span class="text-xs font-bold uppercase tracking-widest text-emerald-400">Executive Fleet &amp; Chauffeurs</span>
-            <h2 class="text-3xl sm:text-4xl font-black text-white">Travel in Comfort Across the Island</h2>
-            <p class="text-sm text-slate-300 leading-relaxed">
-              Every Metshu Travels itinerary is operated with our modern private fleet and government-licensed, English-speaking national tourist chauffeur-guides who understand local secrets, wildlife timings, and scenic photo stops.
+            <span class="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Authentic Island Hospitality</span>
+            <h2 class="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white leading-tight">
+              Why Discerning Travelers Choose <span class="text-emerald-600 dark:text-emerald-400">{{ company.name }}</span>
+            </h2>
+            <p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              We are not just a booking portal; we are a fully accredited Destination Management Company headquartered at {{ company.contact.address }}. Our team lives and breathes Sri Lanka.
             </p>
 
-            <div class="space-y-3">
-              <div class="flex items-start gap-3 p-3 bg-slate-900 border border-slate-800 rounded-lg">
-                <Car class="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div class="space-y-4 pt-2">
+              <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <ShieldCheck class="w-5 h-5" />
+                </div>
                 <div>
-                  <h4 class="text-xs font-bold text-white">Luxury Air-Conditioned Vans (Toyota KDH)</h4>
-                  <p class="text-[11px] text-slate-400 mt-0.5">High-roof, reclining seats, luggage capacity, onboard cool box and bottled water.</p>
+                  <h4 class="font-bold text-sm text-slate-900 dark:text-white">SLTDA Certified &amp; Fully Insured</h4>
+                  <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Official tourism license {{ company.licenseNumber }} with comprehensive passenger liability protection.</p>
                 </div>
               </div>
 
-              <div class="flex items-start gap-3 p-3 bg-slate-900 border border-slate-800 rounded-lg">
-                <Car class="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <HeartHandshake class="w-5 h-5" />
+                </div>
                 <div>
-                  <h4 class="text-xs font-bold text-white">Executive Sedans (Toyota Premio / Allion)</h4>
-                  <p class="text-[11px] text-slate-400 mt-0.5">Ideal for couples and solo travellers seeking smooth, private touring.</p>
+                  <h4 class="font-bold text-sm text-slate-900 dark:text-white">Direct Wholesale DMC Rates</h4>
+                  <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">No middleman markups. Direct contracts with top boutique hotels, safari camps, and transport fleet.</p>
                 </div>
               </div>
 
-              <div class="flex items-start gap-3 p-3 bg-slate-900 border border-slate-800 rounded-lg">
-                <ShieldCheck class="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              <div class="flex items-start gap-4">
+                <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <Award class="w-5 h-5" />
+                </div>
                 <div>
-                  <h4 class="text-xs font-bold text-white">Certified National Tour Guides</h4>
-                  <p class="text-[11px] text-slate-400 mt-0.5">Sri Lanka Tourism Development Authority (SLTDA) certified with verified backgrounds.</p>
+                  <h4 class="font-bold text-sm text-slate-900 dark:text-white">24/7 Island Concierge</h4>
+                  <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Direct contact with your dedicated travel manager before, during, and after your trip.</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Fleet Visual Card -->
-          <div class="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 p-2 shadow-2xl">
-            <img
-              src="https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1100&q=85"
-              alt="Sri Lanka scenic road through lush green hills"
-              class="w-full h-80 sm:h-96 object-cover rounded-xl"
-            />
-            <div class="p-5">
-              <div class="flex items-center justify-between text-xs text-slate-300">
-                <span class="font-bold text-white">Private Door-to-Door Service</span>
-                <span class="text-emerald-400 font-mono">100% Fully Insured</span>
-              </div>
-              <p class="text-[11px] text-slate-400 mt-1">Airport meet &amp; greet, all parking, highway tolls, and guide accommodations covered.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==================================================================== -->
-    <!-- 7. WHY CHOOSE METSHU TRAVELS -->
-    <!-- ==================================================================== -->
-    <section id="why-us" class="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="text-center max-w-2xl mx-auto mb-14">
-        <span class="text-xs font-bold uppercase tracking-widest text-emerald-400">Our Standards</span>
-        <h2 class="text-3xl font-black text-white mt-1">Why Travel with Metshu Travels?</h2>
-        <p class="text-xs text-slate-400 mt-2">
-          Experience Sri Lanka authentically with an established local destination management team.
-        </p>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="p-6 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
-          <HeartHandshake class="w-8 h-8 text-emerald-400" />
-          <h3 class="text-base font-bold text-white">Ethical &amp; Sustainable Tourism</h3>
-          <p class="text-xs text-slate-400 leading-relaxed">
-            We actively support local village communities, genuine artisans, and ethical wildlife encounters while strictly avoiding staged animal exploitation.
-          </p>
-        </div>
-
-        <div class="p-6 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
-          <Award class="w-8 h-8 text-emerald-400" />
-          <h3 class="text-base font-bold text-white">Direct Local DMC Pricing</h3>
-          <p class="text-xs text-slate-400 leading-relaxed">
-            As an on-the-ground Sri Lankan tour operator, we partner directly with hotels and safari suppliers, guaranteeing premium value without overseas markup.
-          </p>
-        </div>
-
-        <div class="p-6 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
-          <Globe class="w-8 h-8 text-emerald-400" />
-          <h3 class="text-base font-bold text-white">24/7 Dedicated Concierge</h3>
-          <p class="text-xs text-slate-400 leading-relaxed">
-            From the moment your plane lands in Colombo until your departure gate, you have a dedicated tour manager reachable on WhatsApp day or night.
-          </p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==================================================================== -->
-    <!-- 8. REVIEWS & TESTIMONIALS -->
-    <!-- ==================================================================== -->
-    <section id="reviews" class="py-20 bg-slate-900/60 border-y border-slate-800">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="text-center max-w-2xl mx-auto mb-12">
-          <span class="text-xs font-bold uppercase tracking-widest text-emerald-400">Traveller Reviews</span>
-          <h2 class="text-3xl font-black text-white mt-1">What Our Guests Say</h2>
-          <div class="flex items-center justify-center gap-1 text-amber-400 mt-2">
-            <Star class="w-4 h-4 fill-amber-400" />
-            <Star class="w-4 h-4 fill-amber-400" />
-            <Star class="w-4 h-4 fill-amber-400" />
-            <Star class="w-4 h-4 fill-amber-400" />
-            <Star class="w-4 h-4 fill-amber-400" />
-            <span class="text-xs text-slate-300 font-bold ml-2">5.0 Star Guest Rating</span>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div class="p-6 bg-slate-950 border border-slate-800 rounded-xl space-y-4">
-            <p class="text-xs text-slate-300 italic leading-relaxed">
-              "Metshu Travels planned our 10-day trip flawlessly. Our driver-guide Samantha made us feel like family, knew the best viewpoints along the Kandy to Ella railway, and the hotels were outstanding."
-            </p>
-            <div class="pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
-              <span class="font-bold text-white">Jonathan &amp; Claire Evans</span>
-              <span class="text-slate-500 font-mono">London, UK</span>
-            </div>
-          </div>
-
-          <div class="p-6 bg-slate-950 border border-slate-800 rounded-xl space-y-4">
-            <p class="text-xs text-slate-300 italic leading-relaxed">
-              "We saw three leopards in Yala on our morning safari! The team accommodated our vegetarian meals and customized the itinerary when we wanted to stay an extra night in Mirissa. Highly recommended!"
-            </p>
-            <div class="pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
-              <span class="font-bold text-white">Markus &amp; Astrid Lind</span>
-              <span class="text-slate-500 font-mono">Stockholm, Sweden</span>
-            </div>
-          </div>
-
-          <div class="p-6 bg-slate-950 border border-slate-800 rounded-xl space-y-4">
-            <p class="text-xs text-slate-300 italic leading-relaxed">
-              "Traveling as a family with two kids can be stressful, but Metshu Travels took care of every detail. The luxury van was spotless and our guide was wonderful with our children."
-            </p>
-            <div class="pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
-              <span class="font-bold text-white">David, Sarah &amp; Kids</span>
-              <span class="text-slate-500 font-mono">Sydney, Australia</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ==================================================================== -->
-    <!-- 9. INTERACTIVE TRIP CUSTOMIZER & INQUIRY FORM (Connected to REST API) -->
-    <!-- ==================================================================== -->
-    <section id="inquiry-section" class="py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-8 sm:p-12 shadow-2xl">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          <!-- Left Pitch -->
-          <div class="space-y-6">
-            <span class="text-xs font-bold uppercase tracking-widest text-emerald-400">Direct Local Booking</span>
-            <h2 class="text-3xl sm:text-4xl font-black text-white">Plan Your Custom Sri Lanka Journey</h2>
-            <p class="text-sm text-slate-300 leading-relaxed">
-              Tell us your preferred dates, party size, and travel style. Our Colombo destination team will create a tailor-made proposal and quotation within 24 hours.
-            </p>
-
-            <div class="p-5 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-3 text-xs text-slate-300">
-              <div class="flex items-center gap-2 text-emerald-400 font-bold">
-                <Check class="w-4 h-4" />
-                <span>Zero Obligation Quotation</span>
-              </div>
-              <p class="text-slate-400">
-                All itineraries can be customized with boutique villas, special excursions, and dietary preferences.
-              </p>
-              <div class="pt-2 border-t border-slate-800 flex items-center gap-4 text-[11px] text-slate-400">
-                <span>WhatsApp: +94 74 394 2844</span>
-                <span>Email: info@metshutravels.com</span>
-              </div>
+          <!-- Quick Testimonial Highlights -->
+          <div class="bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl p-8 shadow-xl space-y-6">
+            <div class="flex items-center gap-1 text-amber-400">
+              <Star class="w-5 h-5 fill-amber-400" />
+              <Star class="w-5 h-5 fill-amber-400" />
+              <Star class="w-5 h-5 fill-amber-400" />
+              <Star class="w-5 h-5 fill-amber-400" />
+              <Star class="w-5 h-5 fill-amber-400" />
+              <span class="text-xs font-bold text-slate-700 dark:text-slate-300 ml-2">4.9 / 5.0 (280+ Reviews)</span>
             </div>
 
-            <!-- Operations link badge -->
-            <div class="pt-2">
-              <p class="text-[11px] text-slate-400 mb-2">Are you a registered overseas agent or DMC staff member?</p>
-              <button
-                @click="emit('open-operations')"
-                class="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-semibold px-4 py-2 rounded-lg border border-slate-700 transition-colors"
-              >
-                <LayoutDashboard class="w-3.5 h-3.5" />
-                <span>Access DMC Operations &amp; Bookings System &rarr;</span>
-              </button>
-            </div>
-          </div>
+            <blockquote class="text-sm text-slate-700 dark:text-slate-300 italic leading-relaxed">
+              &ldquo;Our 10-day tour with {{ company.name }} exceeded every expectation. Our chauffeur Samantha was courteous, incredibly knowledgeable about wildlife, and ensured we always felt safe. A truly 5-star experience from airport arrival to departure.&rdquo;
+            </blockquote>
 
-          <!-- Right Form (Connected to apiClient.createInquiry) -->
-          <div class="bg-slate-950 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-4">
-            <h3 class="text-base font-bold text-white">Trip Inquiry &amp; Quote Request</h3>
-            
-            <form @submit.prevent="handleInquirySubmit" class="space-y-4 text-xs">
+            <div class="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
               <div>
-                <label class="block text-slate-400 mb-1 font-medium">Full Name</label>
-                <input
-                  v-model="inquiryForm.full_name"
-                  required
-                  placeholder="e.g. John Doe"
-                  class="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-white focus:border-emerald-500 outline-none"
-                />
+                <p class="font-bold text-slate-900 dark:text-white">David &amp; Sarah Jenkins</p>
+                <p class="text-[11px] text-slate-500">London, United Kingdom</p>
+              </div>
+              <span class="text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">Verified Guest Tour</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================== -->
+    <!-- 9. CUSTOM TOUR BUILDER & INQUIRY FORM (Connected to REST API) -->
+    <!-- ==================================================================== -->
+    <section id="inquiry-section" class="py-20 bg-slate-50 dark:bg-slate-950 transition-colors">
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 sm:p-10 shadow-2xl">
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- Left Info Column -->
+            <div class="space-y-6">
+              <div>
+                <span class="text-xs font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Get in Touch</span>
+                <h3 class="text-2xl font-black text-slate-900 dark:text-white mt-1">Plan Your Dream Sri Lanka Tour</h3>
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                  Fill in your travel preferences and our travel consultants will craft a customized itinerary and quote within 24 hours.
+                </p>
               </div>
 
+              <div class="space-y-3 text-xs text-slate-700 dark:text-slate-300">
+                <div class="flex items-start gap-2.5">
+                  <MapPin class="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                  <span>{{ company.contact.address }}</span>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <Phone class="w-4 h-4 text-emerald-500 shrink-0" />
+                  <a :href="'tel:' + company.contact.phoneRaw" class="hover:underline font-semibold">{{ company.contact.phone }}</a>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  <Mail class="w-4 h-4 text-emerald-500 shrink-0" />
+                  <a :href="'mailto:' + company.contact.email" class="hover:underline">{{ company.contact.email }}</a>
+                </div>
+              </div>
+
+              <!-- Official Registration Badge -->
+              <div class="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[11px] text-emerald-800 dark:text-emerald-300">
+                <p class="font-bold">SLTDA License: {{ company.licenseNumber }}</p>
+                <p class="text-slate-600 dark:text-slate-400 mt-0.5">Company Reg: {{ company.registrationNumber }}</p>
+              </div>
+            </div>
+
+            <!-- Right Form Column -->
+            <form @submit.prevent="handleInquirySubmit" class="lg:col-span-2 space-y-4 text-xs">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-slate-400 mb-1 font-medium">Email Address</label>
+                  <label class="block text-slate-600 dark:text-slate-400 mb-1 font-medium">Your Full Name *</label>
                   <input
-                    v-model="inquiryForm.email"
-                    type="email"
+                    v-model="inquiryForm.full_name"
                     required
-                    placeholder="john@example.com"
-                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-white focus:border-emerald-500 outline-none"
+                    type="text"
+                    placeholder="e.g. Eleanor Vance"
+                    class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-3 text-slate-900 dark:text-white focus:border-emerald-500 outline-none"
                   />
                 </div>
                 <div>
-                  <label class="block text-slate-400 mb-1 font-medium">Nationality</label>
+                  <label class="block text-slate-600 dark:text-slate-400 mb-1 font-medium">Email Address *</label>
                   <input
-                    v-model="inquiryForm.nationality"
+                    v-model="inquiryForm.email"
                     required
-                    placeholder="e.g. British, German, Australian"
-                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-white focus:border-emerald-500 outline-none"
+                    type="email"
+                    placeholder="e.g. eleanor@example.co.uk"
+                    class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-3 text-slate-900 dark:text-white focus:border-emerald-500 outline-none"
                   />
                 </div>
               </div>
 
               <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label class="block text-slate-400 mb-1 font-medium">Arrival Date</label>
+                  <label class="block text-slate-600 dark:text-slate-400 mb-1 font-medium">Nationality</label>
+                  <input
+                    v-model="inquiryForm.nationality"
+                    type="text"
+                    placeholder="e.g. British, German"
+                    class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-3 text-slate-900 dark:text-white focus:border-emerald-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label class="block text-slate-600 dark:text-slate-400 mb-1 font-medium">Expected Arrival</label>
                   <input
                     v-model="inquiryForm.arrival_date"
-                    type="date"
                     required
-                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-white focus:border-emerald-500 outline-none"
+                    type="date"
+                    class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-3 text-slate-900 dark:text-white focus:border-emerald-500 outline-none"
                   />
                 </div>
                 <div>
-                  <label class="block text-slate-400 mb-1 font-medium">Departure Date</label>
-                  <input
-                    v-model="inquiryForm.departure_date"
-                    type="date"
-                    required
-                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-white focus:border-emerald-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label class="block text-slate-400 mb-1 font-medium">Travellers</label>
+                  <label class="block text-slate-600 dark:text-slate-400 mb-1 font-medium">Number of Travelers</label>
                   <input
                     v-model.number="inquiryForm.travelers"
                     type="number"
                     min="1"
-                    max="40"
-                    required
-                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-white focus:border-emerald-500 outline-none"
+                    max="50"
+                    class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-3 text-slate-900 dark:text-white focus:border-emerald-500 outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label class="block text-slate-400 mb-1 font-medium">Interested Package</label>
+                <label class="block text-slate-600 dark:text-slate-400 mb-1 font-medium">Interested Package</label>
                 <select
                   v-model="inquiryForm.package_interest"
-                  class="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-white focus:border-emerald-500 outline-none"
+                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-3 text-slate-900 dark:text-white focus:border-emerald-500 outline-none"
                 >
                   <option value="custom">Custom Tailor-Made Itinerary</option>
-                  <option v-for="t in TOUR_PACKAGES" :key="t.id" :value="t.id">
-                    {{ t.duration }} - {{ t.title }}
-                  </option>
-                  <option value="day-tour">Day Excursion / Safari Only</option>
+                  <option value="5n-6d-classic">5N / 6D The Island in Miniature</option>
+                  <option value="9n-10d-heritage">9N / 10D Heritage, Highlands &amp; Coastal</option>
+                  <option value="14n-15d-grand">14N / 15D Grand All-Island Discovery Circuit</option>
                 </select>
               </div>
 
               <div>
-                <label class="block text-slate-400 mb-1 font-medium">Your Travel Interests &amp; Notes</label>
+                <label class="block text-slate-600 dark:text-slate-400 mb-1 font-medium">Travel Notes &amp; Special Requests</label>
                 <textarea
                   v-model="inquiryForm.message"
                   required
                   rows="3"
-                  placeholder="Tell us about hotel preferences (4-star / luxury), preferred pace, must-see places, or children's ages..."
-                  class="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-white focus:border-emerald-500 outline-none resize-none"
+                  placeholder="Tell us about hotel preferences (4-star / luxury), pace, must-see places, or children's ages..."
+                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg p-3 text-slate-900 dark:text-white focus:border-emerald-500 outline-none resize-none"
                 ></textarea>
               </div>
 
               <!-- Status Messages -->
-              <div v-if="inquirySuccess" class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400 flex items-center gap-2">
+              <div v-if="inquirySuccess" class="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
                 <Check class="w-4 h-4" />
                 <span>Thank you! Your trip inquiry has been received. Our team will contact you shortly.</span>
               </div>
 
-              <div v-if="inquiryError" class="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-400">
+              <div v-if="inquiryError" class="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-500 dark:text-rose-400">
                 {{ inquiryError }}
               </div>
 
               <button
                 type="submit"
                 :disabled="submittingInquiry"
-                class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg shadow-emerald-950 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm py-3.5 rounded-xl shadow-lg shadow-emerald-950/20 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 <Send class="w-4 h-4" />
                 <span>{{ submittingInquiry ? 'Sending Your Inquiry...' : 'Submit Trip Inquiry' }}</span>
@@ -1148,63 +1232,63 @@ const handleInquirySubmit = async () => {
     </section>
 
     <!-- ==================================================================== -->
-    <!-- 10. FOOTER -->
+    <!-- 10. FOOTER (Whitelabel companyConfig & Theme Switcher) -->
     <!-- ==================================================================== -->
-    <footer class="bg-slate-950 border-t border-slate-800 pt-16 pb-12 text-slate-400 text-xs">
+    <footer class="bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 pt-16 pb-12 text-slate-600 dark:text-slate-400 text-xs transition-colors">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
         <!-- Col 1: Brand & Bio -->
         <div class="space-y-4">
-          <div class="flex items-center gap-2 text-white">
-            <Compass class="w-6 h-6 text-emerald-400" />
-            <span class="font-black text-lg">METSHU TRAVELS</span>
+          <div class="flex items-center gap-2 text-slate-900 dark:text-white">
+            <Compass class="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+            <span class="font-black text-lg uppercase">{{ company.name }}</span>
           </div>
-          <p class="text-xs leading-relaxed text-slate-400">
-            Specializing in personalized and unforgettable journeys across Sri Lanka with expert travel planning and local insight.
+          <p class="text-xs leading-relaxed">
+            {{ company.description }}
           </p>
-          <p class="text-[11px] text-slate-500">
-            Colombo, Sri Lanka &bull; Registered Tour Operator
-          </p>
+          <div class="flex items-center gap-3 pt-1">
+            <ThemeToggle showLabel />
+          </div>
         </div>
 
         <!-- Col 2: Multi-Day Packages -->
         <div class="space-y-3">
-          <h4 class="font-bold text-white text-xs uppercase tracking-wider">Tour Circuits</h4>
+          <h4 class="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider">Tour Circuits</h4>
           <ul class="space-y-2">
-            <li><a href="#tours" class="hover:text-emerald-400 transition-colors">5N/6D Island in Miniature</a></li>
-            <li><a href="#tours" class="hover:text-emerald-400 transition-colors">9N/10D Heritage to Highlands</a></li>
-            <li><a href="#tours" class="hover:text-emerald-400 transition-colors">14N/15D Grand Expedition</a></li>
-            <li><a href="#excursions" class="hover:text-emerald-400 transition-colors">Day Excursions & Safaris</a></li>
+            <li><a href="#tours" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">5N/6D Island in Miniature</a></li>
+            <li><a href="#tours" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">9N/10D Heritage to Highlands</a></li>
+            <li><a href="#tours" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">14N/15D Grand Expedition</a></li>
+            <li><a href="#excursions" class="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">Day Excursions &amp; Safaris</a></li>
           </ul>
         </div>
 
         <!-- Col 3: Contact Info -->
         <div class="space-y-3">
-          <h4 class="font-bold text-white text-xs uppercase tracking-wider">Office Colombo</h4>
+          <h4 class="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider">Office Colombo</h4>
           <ul class="space-y-2">
             <li class="flex items-start gap-2">
-              <MapPin class="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-              <span>L 12, Ceylinco House, Colombo 01, Sri Lanka</span>
+              <MapPin class="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+              <span>{{ company.contact.address }}</span>
             </li>
             <li class="flex items-center gap-2">
-              <Phone class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <a href="tel:+94743942844" class="hover:text-white">+94 74 394 2844</a>
+              <Phone class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <a :href="'tel:' + company.contact.phoneRaw" class="hover:text-slate-900 dark:hover:text-white">{{ company.contact.phone }}</a>
             </li>
             <li class="flex items-center gap-2">
-              <Mail class="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              <a href="mailto:info@metshutravels.com" class="hover:text-white">info@metshutravels.com</a>
+              <Mail class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <a :href="'mailto:' + company.contact.email" class="hover:text-slate-900 dark:hover:text-white">{{ company.contact.email }}</a>
             </li>
           </ul>
         </div>
 
         <!-- Col 4: Operations & System Access -->
         <div class="space-y-3">
-          <h4 class="font-bold text-white text-xs uppercase tracking-wider">Operations &amp; Agents</h4>
-          <p class="text-xs text-slate-400">
-            Access our back-office DMC reservation system, overseas agent portals, and live REST API endpoints.
+          <h4 class="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider">Operations &amp; Agents</h4>
+          <p class="text-xs">
+            Access our back-office DMC reservation system, overseas agent directory, and live REST API endpoints.
           </p>
           <button
             @click="emit('open-operations')"
-            class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-lg shadow-emerald-950 transition-colors"
+            class="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-md transition-colors"
           >
             <LayoutDashboard class="w-3.5 h-3.5" />
             <span>Launch Operations Portal</span>
@@ -1212,29 +1296,29 @@ const handleInquirySubmit = async () => {
         </div>
       </div>
 
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-500">
-        <span>&copy; 2026 Metshu Travels (Pvt) Ltd. All rights reserved.</span>
-        <span>Registered Destination Management Company (DMC) &bull; Sri Lanka Tourism</span>
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-slate-500">
+        <span>&copy; {{ new Date().getFullYear() }} {{ company.legalName }}. All rights reserved.</span>
+        <span>Registered Destination Management Company (DMC) &bull; SLTDA License: {{ company.licenseNumber }}</span>
       </div>
     </footer>
 
     <!-- ==================================================================== -->
     <!-- 11. DAY-BY-DAY ITINERARY MODAL -->
     <!-- ==================================================================== -->
-    <div v-if="showItineraryModal && selectedTour" class="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+    <div v-if="showItineraryModal && selectedTour" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl transition-colors">
         <!-- Modal Header -->
-        <div class="p-6 border-b border-slate-800 flex items-center justify-between">
+        <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div>
             <div class="flex items-center gap-2">
-              <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2.5 py-0.5 rounded">
+              <span class="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2.5 py-0.5 rounded">
                 {{ selectedTour.duration }}
               </span>
-              <span class="text-slate-400 text-xs font-mono">{{ selectedTour.priceLKR }}</span>
+              <span class="text-slate-500 dark:text-slate-400 text-xs font-mono">{{ selectedTour.priceLKR }}</span>
             </div>
-            <h3 class="text-lg font-bold text-white mt-1">{{ selectedTour.title }}</h3>
+            <h3 class="text-lg font-bold text-slate-900 dark:text-white mt-1">{{ selectedTour.title }}</h3>
           </div>
-          <button @click="showItineraryModal = false" class="text-slate-400 hover:text-white p-2">
+          <button @click="showItineraryModal = false" class="text-slate-400 hover:text-slate-700 dark:hover:text-white p-2">
             <X class="w-5 h-5" />
           </button>
         </div>
@@ -1244,25 +1328,25 @@ const handleInquirySubmit = async () => {
           <div
             v-for="d in selectedTour.days"
             :key="d.day"
-            class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2"
+            class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2"
           >
             <div class="flex items-center justify-between text-xs">
-              <span class="font-bold text-emerald-400">Day {{ d.day }}: {{ d.destination }}</span>
+              <span class="font-bold text-emerald-600 dark:text-emerald-400">Day {{ d.day }}: {{ d.destination }}</span>
               <span class="text-[10px] text-slate-500 font-mono">{{ d.meals }}</span>
             </div>
-            <h4 class="font-bold text-white text-xs">{{ d.title }}</h4>
-            <p class="text-xs text-slate-300 leading-relaxed">{{ d.description }}</p>
-            <p class="text-[11px] text-slate-400 font-medium pt-1 border-t border-slate-900">
-              <span class="text-slate-500">Accommodation:</span> {{ d.hotel }}
+            <h4 class="font-bold text-slate-900 dark:text-white text-xs">{{ d.title }}</h4>
+            <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{{ d.description }}</p>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 font-medium pt-1 border-t border-slate-200 dark:border-slate-800">
+              <span class="text-slate-400">Accommodation:</span> {{ d.hotel }}
             </p>
           </div>
 
           <!-- Inclusions -->
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-            <h4 class="font-bold text-white text-xs">Package Inclusions:</h4>
-            <ul class="text-xs text-slate-300 space-y-1">
+          <div class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2">
+            <h4 class="font-bold text-slate-900 dark:text-white text-xs">Package Inclusions:</h4>
+            <ul class="text-xs text-slate-700 dark:text-slate-300 space-y-1">
               <li v-for="inc in selectedTour.inclusions" :key="inc" class="flex items-start gap-2">
-                <Check class="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                <Check class="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
                 <span>{{ inc }}</span>
               </li>
             </ul>
@@ -1270,16 +1354,16 @@ const handleInquirySubmit = async () => {
         </div>
 
         <!-- Modal Footer Actions -->
-        <div class="p-4 border-t border-slate-800 flex items-center justify-between bg-slate-950">
+        <div class="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
           <button
             @click="showItineraryModal = false"
-            class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-lg"
+            class="bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-lg"
           >
             Close
           </button>
           <button
             @click="showItineraryModal = false; selectTourForInquiry(selectedTour.id);"
-            class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-5 py-2.5 rounded-lg shadow-lg shadow-emerald-950"
+            class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-5 py-2.5 rounded-lg shadow-lg"
           >
             Book This Itinerary
           </button>
@@ -1288,14 +1372,14 @@ const handleInquirySubmit = async () => {
     </div>
 
     <!-- ==================================================================== -->
-    <!-- 12. FLOATING WHATSAPP & QUICK INQUIRY CHAT BUTTON -->
+    <!-- 12. FLOATING WHATSAPP BUTTON (Using company.contact.whatsapp) -->
     <!-- ==================================================================== -->
     <a
-      href="https://wa.me/94743942844?text=Hello%20Metshu%20Travels,%20I%20would%20like%20to%20inquire%20about%20a%20tour%20package."
+      :href="'https://wa.me/' + company.contact.phoneRaw + '?text=Hello%20' + encodeURIComponent(company.name) + ',%20I%20would%20like%20to%20inquire%20about%20a%20private%20tour%20package.'"
       target="_blank"
       rel="noopener noreferrer"
-      class="fixed bottom-6 right-6 z-40 bg-emerald-600 hover:bg-emerald-500 text-white p-3.5 rounded-full shadow-2xl shadow-emerald-950 hover:scale-110 transition-all flex items-center justify-center group"
-      title="Chat directly with Metshu Travels on WhatsApp (+94 74 394 2844)"
+      class="fixed bottom-6 right-6 z-40 bg-emerald-600 hover:bg-emerald-500 text-white p-3.5 rounded-full shadow-2xl hover:scale-110 transition-all flex items-center justify-center group"
+      :title="'Chat directly with ' + company.name + ' on WhatsApp'"
     >
       <MessageCircle class="w-6 h-6" />
       <span class="max-w-0 overflow-hidden whitespace-nowrap group-hover:max-w-xs transition-all duration-300 ease-in-out text-xs font-bold pl-0 group-hover:pl-2">

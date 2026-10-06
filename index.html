@@ -1,20 +1,58 @@
 <!doctype html>
+<!--
+  ==============================================================================
+  FILE: index.html (THE HTML ENTRY POINT OF THE APPLICATION)
+  ==============================================================================
+
+  🔰 BEGINNER GUIDE - HOW DOES THIS HTML FILE WORK?
+  ------------------------------------------------------------------------------
+  This is a Single Page Application (SPA). There is only ONE HTML file!
+  
+  1. When a user enters the web address, the browser downloads this HTML file first.
+  2. Inside the <body> tag, there is an empty container: `<div id="app"></div>`.
+  3. Then the browser sees: `<script type="module" src="/src/main.ts"></script>`.
+  4. This script loads Vue 3, compiles your components (PublicWebsite.vue & OperationsPortal.vue),
+     and inserts the rendered user interface right inside `<div id="app"></div>`!
+  5. The user can browse tours, fill forms, view itineraries, and manage reservations
+     without the browser ever needing to reload the entire web page!
+  
+  ------------------------------------------------------------------------------
+  🛠️ HOW TO MAKE MANUAL CHANGES:
+  - You can change the <title> tag on line 32 to rename the website in browser tabs.
+  - You can change the meta description on line 24 for Google SEO search snippets.
+  ==============================================================================
+-->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    
+    <!-- Mobile responsiveness: ensures the site looks great on phones, tablets, and desktop -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#020617" />
+    
+    <!-- SEO & Social Media Card Tags -->
     <meta
       name="description"
       content="Metshu Travels Sri Lanka - Personalized & Unforgettable Journeys Across Sri Lanka with DMC Operations System."
     />
     <meta property="og:title" content="Metshu Travels - Sri Lanka Journeys & DMC Operations" />
     <meta property="og:description" content="Metshu Travels Sri Lanka - Personalized & Unforgettable Journeys Across Sri Lanka with DMC Operations System." />
+    
+    <!-- Browser tab title -->
     <title>Metshu Travels - Sri Lanka Journeys & DMC Operations</title>
   </head>
   <body class="bg-slate-950 text-slate-100 min-h-screen">
+    <!-- 
+      THE MOUNT POINT:
+      Vue 3 will find this div with id="app" and render the complete UI inside it!
+    -->
     <div id="app"></div>
+
+    <!-- 
+      THE ENGINE START:
+      Loads src/main.ts which boots up Vue 3 and App.vue
+    -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

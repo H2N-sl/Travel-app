@@ -4,17 +4,67 @@
  * SERENDIB / METSHU DMC - OPERATIONS SYSTEM & COMPLETE 6-STAGE LIFECYCLE
  * ==============================================================================
  * 
- * 6-STAGE RESERVATION LIFECYCLE PIPELINE:
- * 1. Inquiry Intake (Lead Capture & Booking Record)
- * 2. Itinerary & Resource Selection (Hotels, Meal Plans RO/BB/HB/FB, Transport, Chauffeur Guide)
- * 3. Quotation & Costing Engine (Net Supplier Costs + Markup + Currency Converter)
- * 4. Billing & Payment Processing (Pro-forma Invoices, Deposit & Balance Recording)
- * 5. Confirmation & Service Vouchers (Hotel Check-in Vouchers, Driver Duty Slips with QR)
- * 6. Client Communication Documents (Guest Welcome Letter, Travel Agreement, Post-Trip Survey)
+ * 🔰 BEGINNER GUIDE - WHAT IS A DMC AND HOW DOES THIS PORTAL WORK?
+ * ------------------------------------------------------------------------------
+ * What is a "DMC"?
+ * DMC stands for "Destination Management Company".
+ * In tourism, overseas travel agents (in the UK, Germany, France, etc.) sell Sri Lanka
+ * holidays to tourists, but they don't own vehicles or hotels in Sri Lanka.
+ * Instead, they partner with a local DMC (like Serendib / Metshu Travels) on the ground
+ * to handle everything:
+ *   - Meet tourists at Colombo Airport (CMB)
+ *   - Provide luxury vehicles & certified chauffeur guides
+ *   - Book hotels & negotiate room rates
+ *   - Issue vouchers and handle guest emergencies 24/7
+ * 
+ * ------------------------------------------------------------------------------
+ * THE 6-STAGE TRAVEL RESERVATION PIPELINE:
+ * 1. Inquiry Intake:
+ *    - Captures website leads or incoming emails from overseas agents.
+ *    - Creates an initial master Booking record with party size and travel dates.
+ * 
+ * 2. Itinerary & Resource Allocation:
+ *    - Builds the day-by-day sequence of destinations (Kandy, Ella, Yala, Galle).
+ *    - Allocates partner hotels, room categories, and meal plans (RO, BB, HB, FB, AI).
+ *    - Assigns private vehicles (Toyota KDH Van) and certified chauffeur guides.
+ * 
+ * 3. Quotation & Costing Engine:
+ *    - Calculates net supplier expenses (hotels + transport + guides + activities).
+ *    - Applies DMC profit markup margin (e.g. 20% to 30%).
+ *    - Generates client-facing quotations in LKR, USD, EUR, or GBP.
+ * 
+ * 4. Billing, Invoicing & Payment Processing:
+ *    - Issues pro-forma invoices.
+ *    - Records deposit transactions (30%) and balance settlements (70%).
+ *    - Supports Stripe, PayHere, and international bank wire transfers.
+ * 
+ * 5. Confirmation & Service Vouchers:
+ *    - Generates official Hotel Check-in Vouchers and Driver Duty Slips.
+ *    - Includes anti-fraud verification tokens and QR code mobile verification links!
+ * 
+ * 6. Automated Client Documents:
+ *    - Generates Guest Welcome Letters (meeting point instructions, emergency contacts).
+ *    - Generates DMC Travel Agreements (terms, cancellation policies).
+ *    - Generates Post-Trip Thank-You letters & feedback surveys.
+ * 
+ * ------------------------------------------------------------------------------
+ * 🛠️ HOW TO MAKE MANUAL CHANGES:
+ * - Change default markup margin: see `quoteMarkup` (defaults to 25%).
+ * - Change default currency: see `quoteCurrency` (defaults to 'LKR').
+ * - Connect to your local Laravel server: click the "API Connection" button in the
+ *   top-right of this portal and type `http://127.0.0.1:8000/api`.
  * ==============================================================================
  */
 
+// Step 1: Import Vue reactivity and lifecycle hooks
+// - 'ref': creates reactive variables that automatically update the UI.
+// - 'computed': creates auto-calculated values (like total revenue or active booking counts).
+// - 'onMounted': runs automatically when this component first loads onto the screen.
 import { ref, computed, onMounted } from 'vue';
+import { useCompany } from '../composables/useCompany';
+import ThemeToggle from './ThemeToggle.vue';
+
+// Step 2: Import our REST API client service and TypeScript interfaces
 import {
   apiClient,
   getStoredApiBaseUrl,
@@ -27,6 +77,8 @@ import {
   type LifecycleStage,
   type ServiceVoucher
 } from '../services/api';
+
+// Step 3: Import Lucide icons used for dashboards, tabs, and documents
 import {
   LayoutDashboard,
   Calendar,
@@ -58,38 +110,57 @@ import {
   Car
 } from 'lucide-vue-next';
 
-// Emit event to return to public website
+/**
+ * Event emitter:
+ * Tells the parent App.vue when the staff member clicks "← View Public Website"
+ * so the view switches back to the tourist website.
+ */
 const emit = defineEmits<{
   (e: 'back-to-website'): void;
 }>();
 
-// State
-const activeTab = ref<'dashboard' | 'bookings' | 'lifecycle' | 'agents' | 'inquiries' | 'api-docs'>('dashboard');
-const bookings = ref<Booking[]>([]);
-const agents = ref<Agent[]>([]);
-const inquiries = ref<Inquiry[]>([]);
-const loading = ref(false);
-const apiSource = ref<'laravel' | 'mock'>('mock');
-const currentApiUrl = ref(getStoredApiBaseUrl());
+// Whitelabel Company Branding
+const { company } = useCompany();
 
-// Connection testing
+// ==============================================================================
+// REACTIVE STATE (DATA VARIABLES)
+// ==============================================================================
+
+// Main Navigation Tab: controls which screen is currently displayed in the portal:
+// 'dashboard' | 'bookings' | 'lifecycle' | 'agents' | 'inquiries' | 'api-docs'
+const activeTab = ref<'dashboard' | 'bookings' | 'lifecycle' | 'agents' | 'inquiries' | 'api-docs'>('dashboard');
+
+// Lists holding data fetched from the API backend
+const bookings = ref<Booking[]>([]);   // All bookings
+const agents = ref<Agent[]>([]);       // All overseas wholesale partners
+const inquiries = ref<Inquiry[]>([]); // All customer leads from website
+
+// UI Status indicators
+const loading = ref(false);            // Shows spinner while loading data
+const apiSource = ref<'laravel' | 'mock'>('mock'); // Indicates whether data came from Laravel or fallback mock
+const currentApiUrl = ref(getStoredApiBaseUrl());   // Current backend base URL
+
+// Connection testing modal state
 const isTestingConnection = ref(false);
 const connectionTestResult = ref<{ isOnline: boolean; message: string; url: string } | null>(null);
 
-// Search & Filter
+// Search & Filter state for the Bookings Table
 const searchQuery = ref('');
 const statusFilter = ref('ALL');
 
-// Selected Booking for 6-Stage Lifecycle Workspace
+// Selected Booking for the 6-Stage Lifecycle Workspace
+// When a staff member clicks a booking, it becomes 'activeBooking'
 const activeBooking = ref<Booking | null>(null);
+
+// Which stage tab (1, 2, 3, 4, 5, or 6) is currently active inside the lifecycle workspace
 const currentStageTab = ref<number>(1);
 
-// Costing / Quotation Engine State
-const quoteMarkup = ref<number>(25);
+// Costing / Quotation Engine State (Stage 3)
+const quoteMarkup = ref<number>(25); // Default profit margin (25%)
 const quoteCurrency = ref<'LKR' | 'USD' | 'EUR' | 'GBP'>('LKR');
 const quoteCalculation = ref<any>(null);
 
-// Payment Recording Form
+// Payment Recording Form (Stage 4)
 const paymentForm = ref({
   amount: 855000,
   currency: 'LKR' as const,
@@ -99,17 +170,17 @@ const paymentForm = ref({
   notes: ''
 });
 
-// Generated Vouchers & Document State
+// Generated Vouchers & Document State (Stages 5 & 6)
 const generatedVouchers = ref<ServiceVoucher[]>([]);
 const activeDocType = ref<'welcome_letter' | 'travel_agreement' | 'thank_you_survey' | 'quotation'>('welcome_letter');
 const activeDocContent = ref<any>(null);
 
-// Modals
-const showBookingModal = ref(false);
-const showAgentModal = ref(false);
-const showApiConfigModal = ref(false);
+// Modal popups visibility
+const showBookingModal = ref(false);   // + New Booking modal
+const showAgentModal = ref(false);     // + Register Agent modal
+const showApiConfigModal = ref(false); // API Settings modal
 
-// Forms
+// New Booking Form Data
 const bookingForm = ref<NewBooking>({
   agent_id: '',
   guest_name: '',
@@ -127,6 +198,7 @@ const bookingForm = ref<NewBooking>({
   special_requests: 'Honeymoon arrangement, vegetarian meal.'
 });
 
+// New Agent Form Data
 const agentForm = ref<NewAgent>({
   code: '',
   name: '',
@@ -136,17 +208,33 @@ const agentForm = ref<NewAgent>({
   phone: ''
 });
 
+// Temporary URL input in the API configuration modal
 const tempApiUrl = ref(currentApiUrl.value);
 
-// Computed stats
+// ==============================================================================
+// COMPUTED PROPERTIES (AUTO-CALCULATED VALUES)
+// ==============================================================================
+
+/**
+ * totalRevenue:
+ * Sums up the revenue of all bookings in the system.
+ */
 const totalRevenue = computed(() => {
   return bookings.value.reduce((acc, b) => acc + (Number(b.revenue_lkr) || 0), 0);
 });
 
+/**
+ * activeBookingsCount:
+ * Counts bookings that are currently in progress ('In Operation' or 'Confirmed').
+ */
 const activeBookingsCount = computed(() => {
   return bookings.value.filter(b => b.status === 'In Operation' || b.status === 'Confirmed').length;
 });
 
+/**
+ * filteredBookings:
+ * Filters the bookings list based on the search input box and status filter dropdown.
+ */
 const filteredBookings = computed(() => {
   return bookings.value.filter(b => {
     const query = searchQuery.value.toLowerCase().trim();
@@ -162,7 +250,15 @@ const filteredBookings = computed(() => {
   });
 });
 
-// Load all data
+// ==============================================================================
+// METHODS & OPERATIONS LOGIC
+// ==============================================================================
+
+/**
+ * loadData():
+ * Fetches bookings, agents, and inquiries concurrently from the API.
+ * Runs automatically on page load via `onMounted(loadData)`.
+ */
 const loadData = async () => {
   loading.value = true;
   try {
@@ -176,10 +272,12 @@ const loadData = async () => {
     inquiries.value = inquiriesRes.data;
     apiSource.value = bookingsRes.source;
 
+    // Automatically select first booking if none is active
     if (!activeBooking.value && bookings.value.length) {
       activeBooking.value = bookings.value[0];
     }
 
+    // Pre-fill agent in new booking form
     if (agents.value.length && !bookingForm.value.agent_id) {
       bookingForm.value.agent_id = agents.value[0].id;
     }
@@ -190,7 +288,11 @@ const loadData = async () => {
   }
 };
 
-// Select Booking into the 6-Stage Lifecycle Workspace
+/**
+ * openLifecycleWorkspace(booking, stageNumber):
+ * Opens a booking inside the 6-Stage Lifecycle Workspace.
+ * Automatically loads its quotation breakdown, vouchers, and client documents.
+ */
 const openLifecycleWorkspace = async (b: Booking, stageNumber = 1) => {
   activeBooking.value = b;
   currentStageTab.value = stageNumber;
@@ -198,7 +300,10 @@ const openLifecycleWorkspace = async (b: Booking, stageNumber = 1) => {
   await refreshLifecycleData(b.id);
 };
 
-// Refresh data for current booking in lifecycle
+/**
+ * refreshLifecycleData(bookingId):
+ * Calls the API to calculate quote numbers, generate vouchers, and fetch documents.
+ */
 const refreshLifecycleData = async (bookingId: number) => {
   const [quoteRes, vouchersRes, docRes] = await Promise.all([
     apiClient.calculateQuote(bookingId, { markup_percentage: quoteMarkup.value, target_currency: quoteCurrency.value }),
@@ -210,7 +315,10 @@ const refreshLifecycleData = async (bookingId: number) => {
   activeDocContent.value = docRes.data;
 };
 
-// Re-calculate quotation with new markup
+/**
+ * handleRecalculateQuote():
+ * Re-runs the financial calculation when staff adjust the markup margin (e.g. 20% -> 30%).
+ */
 const handleRecalculateQuote = async () => {
   if (!activeBooking.value) return;
   const res = await apiClient.calculateQuote(activeBooking.value.id, {
@@ -221,7 +329,11 @@ const handleRecalculateQuote = async () => {
   await loadData();
 };
 
-// Record payment transaction
+/**
+ * handleRecordPayment():
+ * Logs a payment (deposit, balance, or full settlement) for the active booking.
+ * Automatically advances the booking stage once paid!
+ */
 const handleRecordPayment = async () => {
   if (!activeBooking.value) return;
   await apiClient.recordPayment(activeBooking.value.id, paymentForm.value);
@@ -232,7 +344,10 @@ const handleRecordPayment = async () => {
   if (updated) activeBooking.value = updated;
 };
 
-// Load specific document type
+/**
+ * loadDocumentType(type):
+ * Switches between 'welcome_letter', 'travel_agreement', and 'thank_you_survey'.
+ */
 const loadDocumentType = async (type: 'welcome_letter' | 'travel_agreement' | 'thank_you_survey' | 'quotation') => {
   if (!activeBooking.value) return;
   activeDocType.value = type;
@@ -240,7 +355,10 @@ const loadDocumentType = async (type: 'welcome_letter' | 'travel_agreement' | 't
   activeDocContent.value = res.data;
 };
 
-// Advance lifecycle stage
+/**
+ * advanceStage(stage):
+ * Manually advances the active booking to another stage in the 6-stage lifecycle.
+ */
 const advanceStage = async (stage: LifecycleStage) => {
   if (!activeBooking.value) return;
   await apiClient.updateLifecycleStage(activeBooking.value.id, stage);
@@ -249,7 +367,12 @@ const advanceStage = async (stage: LifecycleStage) => {
   if (updated) activeBooking.value = updated;
 };
 
-// Create Booking
+/**
+ * submitBooking():
+ * Submits the "+ New Booking" form to POST /api/bookings.
+ * Automatically creates unique booking code ({CODE}-{YEAR}-{0001}),
+ * calculates expenses, adds Day 1 itinerary, and opens the lifecycle workspace!
+ */
 const submitBooking = async () => {
   try {
     const res = await apiClient.createBooking(bookingForm.value);
@@ -277,7 +400,10 @@ const submitBooking = async () => {
   }
 };
 
-// Create Agent
+/**
+ * submitAgent():
+ * Submits the "+ Register Agent" form to POST /api/agents.
+ */
 const submitAgent = async () => {
   try {
     await apiClient.createAgent(agentForm.value);
@@ -296,7 +422,10 @@ const submitAgent = async () => {
   }
 };
 
-// Update Inquiry Status
+/**
+ * setInquiryStatus(id, status):
+ * Updates inquiry status (New -> Contacted -> Closed) via PATCH /api/inquiries/{id}/status.
+ */
 const setInquiryStatus = async (id: number, status: Inquiry['status']) => {
   try {
     await apiClient.updateInquiryStatus(id, status);
@@ -306,7 +435,10 @@ const setInquiryStatus = async (id: number, status: Inquiry['status']) => {
   }
 };
 
-// Connection Test
+/**
+ * runConnectionTest():
+ * Pings the Laravel REST API server to verify if it is reachable.
+ */
 const runConnectionTest = async () => {
   isTestingConnection.value = true;
   connectionTestResult.value = null;
@@ -317,7 +449,10 @@ const runConnectionTest = async () => {
   }
 };
 
-// Save API Base URL
+/**
+ * saveApiUrl():
+ * Saves the custom API URL in localStorage and reloads data.
+ */
 const saveApiUrl = () => {
   setStoredApiBaseUrl(tempApiUrl.value);
   currentApiUrl.value = tempApiUrl.value;
@@ -326,6 +461,7 @@ const saveApiUrl = () => {
   loadData();
 };
 
+// Lifecycle Hook: Load initial data when component mounts
 onMounted(loadData);
 </script>
 
@@ -349,7 +485,7 @@ onMounted(loadData);
             <Compass class="w-5 h-5" />
           </div>
           <div>
-            <h1 class="font-bold text-white text-sm tracking-wide">DMC Operations</h1>
+            <h1 class="font-bold text-white text-sm tracking-wide uppercase">{{ company.shortName }} Operations</h1>
             <p class="text-[11px] text-emerald-400 font-medium">6-Stage Lifecycle Engine</p>
           </div>
         </div>
@@ -427,8 +563,12 @@ onMounted(loadData);
         </nav>
       </div>
 
-      <!-- Sidebar Footer: Laravel Connection Status -->
-      <div class="p-4 border-t border-slate-800 bg-slate-950/60">
+      <!-- Sidebar Footer: Appearance Theme & Laravel Connection Status -->
+      <div class="p-4 border-t border-slate-800 bg-slate-950/60 space-y-3">
+        <div class="flex items-center justify-between px-1">
+          <span class="text-xs font-semibold text-slate-400">Appearance</span>
+          <ThemeToggle compact />
+        </div>
         <button
           @click="showApiConfigModal = true"
           class="w-full flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 transition-colors text-left"
@@ -471,6 +611,9 @@ onMounted(loadData);
 
         <!-- Quick Action Buttons -->
         <div class="flex items-center gap-2.5">
+          <!-- Top Header Theme Switcher -->
+          <ThemeToggle />
+
           <button
             @click="loadData"
             :disabled="loading"
